@@ -1,8 +1,9 @@
 import { randomUUID } from 'node:crypto';
 
+// players: array of { id, name }
 export function createInitialState({ map, rules, players }) {
-  const entities = players.map((name, idx) => ({
-    id: randomUUID(),
+  const entities = players.map(({ id, name }) => ({
+    id: id || randomUUID(),
     name,
     cash: rules.startingCash,
     position: 0,
@@ -16,6 +17,7 @@ export function createInitialState({ map, rules, players }) {
     id: randomUUID(),
     createdAt: Date.now(),
     status: 'active',
+    winner: null,
     mapId: map.id,
     rulesId: rules.id,
     version: 1,
@@ -23,6 +25,7 @@ export function createInitialState({ map, rules, players }) {
     players: entities,
     ownership: {},
     bank: { vacationPot: 0 },
+    cardIndex: { chance: 0, community: 0 },
     log: []
   };
 }

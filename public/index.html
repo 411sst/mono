@@ -8,7 +8,7 @@
 </head>
 <body>
   <main>
-    <h1>Meownopoly Quick Match</h1>
+    <h1>Meownopoly</h1>
     <section class="panel">
       <input id="name" placeholder="Your name" />
       <button id="queueBtn">Join Queue</button>
@@ -21,14 +21,17 @@
     </section>
 
     <section class="panel" id="gamePanel" hidden>
+      <div id="gameOver" class="game-over" hidden></div>
+      <div id="dash"></div>
+      <div id="lastEvent" class="last-event"></div>
+      <div class="actions">
+        <button id="rollBtn" disabled>Roll</button>
+        <button id="buyBtn" disabled>Buy</button>
+        <button id="payJailBtn" hidden>Pay Jail ($50)</button>
+        <button id="endBtn" disabled>End Turn</button>
+      </div>
       <h2>Board</h2>
       <div id="board"></div>
-      <div id="dash"></div>
-      <div class="actions">
-        <button id="rollBtn">Roll</button>
-        <button id="buyBtn">Buy</button>
-        <button id="endBtn">End Turn</button>
-      </div>
     </section>
   </main>
   <script type="module" src="/app.js"></script>

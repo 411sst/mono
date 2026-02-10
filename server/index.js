@@ -41,7 +41,7 @@ const server = http.createServer(async (req, res) => {
   if (req.method === 'POST' && url.pathname.match(/^\/api\/sessions\/[\w-]+\/action$/)) {
     const sessionId = url.pathname.split('/')[3];
     const b = await body(req);
-    const result = sessions.act(sessionId, b.action, b.expectedVersion);
+    const result = sessions.act(sessionId, b.action, b.expectedVersion, b.playerId);
     return json(res, result.ok ? 200 : 400, result);
   }
 

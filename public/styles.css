@@ -1,10 +1,108 @@
+* { box-sizing: border-box; }
 body { font-family: system-ui, sans-serif; background: #111827; color: #e5e7eb; margin: 0; }
-main { max-width: 980px; margin: 0 auto; padding: 20px; display: grid; gap: 16px; }
+main { max-width: 1100px; margin: 0 auto; padding: 20px; display: grid; gap: 16px; }
+h1 { margin: 0; font-size: 1.6rem; color: #f59e0b; }
+h2 { margin: 0 0 10px; font-size: 1rem; color: #9ca3af; }
+
 .panel { background: #1f2937; border-radius: 12px; padding: 16px; }
-#board { display: grid; grid-template-columns: repeat(4,1fr); gap: 8px; }
-.space { border: 1px solid #374151; border-radius: 8px; padding: 8px; min-height: 54px; font-size: 12px; }
+
+/* Queue / sessions */
+input { padding: 8px 10px; border-radius: 8px; border: 1px solid #4b5563; background: #111827; color: #f3f4f6; margin-right: 8px; }
+button { background: #3b82f6; color: white; border: 0; border-radius: 8px; padding: 8px 14px; cursor: pointer; font-size: 0.9rem; }
+button:disabled { background: #374151; color: #6b7280; cursor: not-allowed; }
+button:hover:not(:disabled) { background: #2563eb; }
+#sessions { list-style: none; padding: 0; margin: 0; display: flex; flex-direction: column; gap: 6px; }
+#sessions li { background: #111827; border-radius: 8px; padding: 8px 12px; display: flex; justify-content: space-between; align-items: center; }
+#queueStatus { margin-top: 8px; font-size: 0.85rem; color: #9ca3af; }
+
+/* Actions bar */
+.actions { display: flex; gap: 8px; margin-bottom: 14px; flex-wrap: wrap; }
+#payJailBtn { background: #d97706; }
+#payJailBtn:hover { background: #b45309; }
+
+/* Scoreboard */
+.player-row { padding: 6px 10px; border-radius: 6px; font-size: 0.9rem; margin-bottom: 4px; background: #111827; }
+.player-row.me { border-left: 3px solid #3b82f6; }
+.player-row.bankrupt { opacity: 0.4; text-decoration: line-through; }
+.turn-arrow { color: #34d399; font-weight: bold; margin-left: 6px; }
+
+/* Last event ticker */
+.last-event { font-size: 0.85rem; color: #f59e0b; padding: 6px 10px; background: #111827; border-radius: 6px; margin: 8px 0; min-height: 28px; }
+
+/* Game over banner */
+.game-over { background: #065f46; color: #6ee7b7; padding: 14px; border-radius: 8px; font-size: 1.1rem; font-weight: bold; text-align: center; margin-bottom: 12px; }
+
+/* Board — 40 spaces in a 5-column wrap */
+#board { display: grid; grid-template-columns: repeat(5, 1fr); gap: 6px; margin-top: 6px; }
+
+.space {
+  border: 1px solid #374151;
+  border-radius: 6px;
+  padding: 6px 8px;
+  min-height: 62px;
+  font-size: 11px;
+  position: relative;
+  background: #111827;
+  overflow: hidden;
+}
+.space strong { font-size: 11px; line-height: 1.2; display: block; margin-bottom: 2px; }
+.space small { color: #6b7280; font-size: 10px; }
 .space.owned { border-color: #f59e0b; }
-.actions { display: flex; gap: 8px; margin-top: 10px; }
-button { background: #3b82f6; color: white; border: 0; border-radius: 8px; padding: 8px 10px; }
-input { padding: 8px; border-radius: 8px; border: 1px solid #4b5563; background: #111827; color: #f3f4f6; }
-@media (max-width: 700px) { #board { grid-template-columns: repeat(2,1fr); } }
+
+/* Corner spaces */
+.space.start, .space.jail, .space.freeparking, .space.gotojail {
+  background: #1f2937;
+  border-color: #4b5563;
+}
+
+/* Group color stripe */
+.group-dot {
+  display: block;
+  width: 100%;
+  height: 6px;
+  border-radius: 3px;
+  margin-bottom: 4px;
+}
+
+/* Owner tag */
+.owner {
+  display: block;
+  font-size: 9px;
+  color: #f59e0b;
+  margin-top: 2px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Player tokens on board */
+.tokens { display: flex; gap: 3px; margin-top: 4px; flex-wrap: wrap; }
+.token {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  background: #4b5563;
+  color: #e5e7eb;
+  font-size: 10px;
+  font-weight: bold;
+  border: 1px solid #6b7280;
+}
+.token.mine {
+  background: #2563eb;
+  border-color: #93c5fd;
+  color: white;
+}
+
+/* Chance / Community Chest */
+.space.chance { background: #1c1917; border-color: #78716c; }
+.space.communitychest { background: #172554; border-color: #3b82f6; }
+.space.tax { background: #1c0a00; border-color: #78350f; }
+.space.railroad { background: #0f172a; border-color: #94a3b8; }
+.space.utility { background: #0f1a0f; border-color: #4ade80; }
+
+@media (max-width: 700px) {
+  #board { grid-template-columns: repeat(3, 1fr); }
+}

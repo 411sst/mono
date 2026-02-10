@@ -6,5 +6,10 @@ export const richupPreset = Object.freeze({
   doubleRentOnSet: true,
   jailBlocksRent: true,
   mandatoryAuctionOnSkip: true,
-  timeoutPenaltyStep: 50
+  timeoutPenaltyStep: 50,
+  goSalary: 200,
+  jailFine: 50,
+  jailIndex: 10,
+  utilityDiceMultiplierOne: 4,
+  utilityDiceMultiplierBoth: 10
 });
