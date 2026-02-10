@@ -105,6 +105,25 @@ button:hover:not(:disabled) { background: #2563eb; }
 .space.railroad { background: #0f172a; border-color: #94a3b8; }
 .space.utility { background: #0f1a0f; border-color: #4ade80; }
 
+/* Property management panel */
+.prop-panel { background: #1f2937; border-radius: 12px; padding: 16px; margin-top: 16px; }
+.prop-row { display: flex; align-items: center; justify-content: space-between; padding: 5px 8px; background: #111827; border-radius: 6px; margin-bottom: 4px; gap: 8px; }
+.prop-name { font-size: 0.85rem; flex: 1; display: flex; align-items: center; gap: 6px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.prop-dot { display: inline-block; width: 10px; height: 10px; border-radius: 50%; flex-shrink: 0; }
+.prop-btns { display: flex; gap: 5px; flex-wrap: wrap; flex-shrink: 0; }
+.prop-btns button { font-size: 0.78rem; padding: 3px 8px; }
+.prop-build    { background: #059669; }
+.prop-build:hover { background: #047857; }
+.prop-sell     { background: #d97706; }
+.prop-sell:hover { background: #b45309; }
+.prop-mortgage { background: #4b5563; }
+.prop-mortgage:hover { background: #374151; }
+.prop-unmortgage { background: #1d4ed8; }
+.prop-unmortgage:hover { background: #1e40af; }
+
+/* House/hotel tag on board */
+.house-tag { font-size: 10px; display: block; margin-top: 2px; }
+
 /* Trade panel */
 .trade-panel, .chat-panel { background: #1f2937; border-radius: 12px; padding: 16px; margin-top: 16px; }
 .trade-cols { display: flex; gap: 12px; flex-wrap: wrap; margin: 10px 0; }

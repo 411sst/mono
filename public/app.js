@@ -45,6 +45,7 @@ function render() {
   renderBoard();
   renderDash();
   renderActions();
+  renderPropPanel();
   renderTrade();
   renderChat();
   if (state.status === 'finished') renderGameOver();
@@ -61,17 +62,22 @@ function renderBoard() {
     if (owned) cls += ' owned';
     div.className = cls;
 
-    const colorDot = space.group && map.groups?.[space.group]?.color
-      ? `<span class="group-dot" style="background:${map.groups[space.group].color}"></span>`
+    const group = space.group && map.groups?.[space.group];
+    const colorDot = group?.color
+      ? `<span class="group-dot" style="background:${group.color}"></span>`
       : '';
     const ownerName = owned ? state.players.find((p) => p.id === owned.ownerId)?.name : '';
-    const ownerTag = ownerName ? `<span class="owner">${ownerName}</span>` : '';
+    const ownerTag = ownerName ? `<span class="owner">${owned.mortgaged ? '📌 ' : ''}${ownerName}</span>` : '';
+    const maxH = group?.maxHouses ?? 4;
+    const houseTag = owned?.houses > 0
+      ? `<span class="house-tag">${owned.houses >= maxH ? '🏨' : '🏠'.repeat(owned.houses)}</span>`
+      : '';
     const tokens = players.map((p) => {
       const isMe = p.id === myPlayerId;
       return `<span class="token${isMe ? ' mine' : ''}" title="${p.name}">${p.name[0]}</span>`;
     }).join('');
 
-    div.innerHTML = `${colorDot}<strong>${space.name}</strong><br/><small>${space.type}</small>${ownerTag}${tokens ? `<div class="tokens">${tokens}</div>` : ''}`;
+    div.innerHTML = `${colorDot}<strong>${space.name}</strong><br/><small>${space.type}</small>${ownerTag}${houseTag}${tokens ? `<div class="tokens">${tokens}</div>` : ''}`;
     board.appendChild(div);
   });
 }
@@ -108,6 +114,10 @@ function renderDash() {
       case 'JAIL_ESCAPE':msg = `${name} escaped jail! → ${lastEvent.landed}`; break;
       case 'PAY_JAIL':        msg = `${name} paid $${lastEvent.fine} to leave jail`; break;
       case 'USE_PARDON':      msg = `${name} used a Pardon card to leave jail`; break;
+      case 'MORTGAGE':        msg = `${name} mortgaged ${map?.spaces[lastEvent.space]?.name} (+$${lastEvent.amount})`; break;
+      case 'UNMORTGAGE':      msg = `${name} unmortgaged ${map?.spaces[lastEvent.space]?.name} (-$${lastEvent.amount})`; break;
+      case 'BUILD_HOUSE':     msg = `${name} built a ${lastEvent.hotel ? 'hotel' : 'house'} on ${map?.spaces[lastEvent.space]?.name}`; break;
+      case 'SELL_HOUSE':      msg = `${name} sold a house on ${map?.spaces[lastEvent.space]?.name} (+$${lastEvent.refund})`; break;
       case 'TRADE_OFFER':     msg = `${name} proposed a trade`; break;
       case 'TRADE_ACCEPT':    msg = `${name} accepted a trade`; break;
       case 'TRADE_REJECT':    msg = `${name} rejected a trade`; break;
@@ -142,6 +152,70 @@ function renderGameOver() {
   const winner = state.players.find((p) => p.id === state.winner);
   el('gameOver').hidden = false;
   el('gameOver').textContent = winner ? `Game over! ${winner.name} wins!` : 'Game over!';
+}
+
+// --- Property management ---
+
+function getHousePrice(space) {
+  const group = space.group ? map?.groups?.[space.group] : null;
+  return group?.housePrice ?? Math.max(50, Math.round(space.price * 0.5 / 50) * 50);
+}
+
+function hasFullGroup(spaceIdx) {
+  const space = map?.spaces[spaceIdx];
+  if (!space?.group) return false;
+  return map.spaces
+    .filter((s) => s.group === space.group && s.type === 'Property')
+    .every((s) => state.ownership[s.index]?.ownerId === myPlayerId);
+}
+
+function renderPropPanel() {
+  if (!state || !myPlayerId || !map) return;
+  const isMyTurn = state.players[state.turn.index]?.id === myPlayerId;
+  const panel = el('propPanel');
+  if (!isMyTurn || state.status === 'finished') { panel.hidden = true; return; }
+
+  const myProps = Object.entries(state.ownership)
+    .filter(([, o]) => o.ownerId === myPlayerId)
+    .map(([idx, ownership]) => ({ idx: Number(idx), space: map.spaces[Number(idx)], ownership }))
+    .filter((p) => p.space)
+    .sort((a, b) => a.idx - b.idx);
+
+  if (myProps.length === 0) { panel.hidden = true; return; }
+  panel.hidden = false;
+
+  el('propList').innerHTML = myProps.map(({ idx, space, ownership }) => {
+    const group = space.group ? map.groups?.[space.group] : null;
+    const maxH = group?.maxHouses ?? 4;
+    const price = space.type === 'Property' ? getHousePrice(space) : 0;
+    const canBuild   = space.type === 'Property' && !ownership.mortgaged && ownership.houses < maxH && hasFullGroup(idx);
+    const canSell    = space.type === 'Property' && ownership.houses > 0;
+    const canMort    = !ownership.mortgaged && ownership.houses === 0;
+    const canUnmort  = ownership.mortgaged;
+    const mortVal    = Math.floor(space.price * 0.5);
+    const unmortCost = Math.floor(space.price * 0.55);
+    const houseStr   = ownership.houses >= maxH ? '🏨' : '🏠'.repeat(ownership.houses);
+    const dot = group?.color ? `<span class="prop-dot" style="background:${group.color}"></span>` : '';
+    const mortLabel  = ownership.mortgaged ? ' [M]' : '';
+    return `<div class="prop-row">
+      <span class="prop-name">${dot}${space.name}${mortLabel}${houseStr ? ` ${houseStr}` : ''}</span>
+      <div class="prop-btns">
+        ${canBuild  ? `<button class="prop-build"    data-idx="${idx}" title="Build house ($${price})">🏠+</button>` : ''}
+        ${canSell   ? `<button class="prop-sell"     data-idx="${idx}" title="Sell house (+$${Math.floor(price/2)})">🏠−</button>` : ''}
+        ${canMort   ? `<button class="prop-mortgage" data-idx="${idx}" title="Mortgage (+$${mortVal})">Mortgage</button>` : ''}
+        ${canUnmort ? `<button class="prop-unmortgage" data-idx="${idx}" title="Unmortgage (−$${unmortCost})">Unmortgage</button>` : ''}
+      </div>
+    </div>`;
+  }).join('');
+
+  el('propList').querySelectorAll('.prop-build').forEach((btn) =>
+    btn.addEventListener('click', () => sendAction('BUILD_HOUSE', { spaceIndex: Number(btn.dataset.idx) })));
+  el('propList').querySelectorAll('.prop-sell').forEach((btn) =>
+    btn.addEventListener('click', () => sendAction('SELL_HOUSE', { spaceIndex: Number(btn.dataset.idx) })));
+  el('propList').querySelectorAll('.prop-mortgage').forEach((btn) =>
+    btn.addEventListener('click', () => sendAction('MORTGAGE', { spaceIndex: Number(btn.dataset.idx) })));
+  el('propList').querySelectorAll('.prop-unmortgage').forEach((btn) =>
+    btn.addEventListener('click', () => sendAction('UNMORTGAGE', { spaceIndex: Number(btn.dataset.idx) })));
 }
 
 // --- Trade ---
@@ -316,11 +390,11 @@ el('endBtn').onclick        = () => sendAction('END_TURN');
 el('payJailBtn').onclick    = () => sendAction('PAY_JAIL');
 el('usePardonBtn').onclick  = () => sendAction('USE_PARDON');
 
-async function sendAction(type) {
+async function sendAction(type, extra = {}) {
   if (!activeSession || !state) return;
   const out = await api(`/api/sessions/${activeSession}/action`, {
     method: 'POST',
-    body: JSON.stringify({ action: { type }, expectedVersion: state.version, playerId: myPlayerId })
+    body: JSON.stringify({ action: { type, ...extra }, expectedVersion: state.version, playerId: myPlayerId })
   });
   if (!out.ok) alert(out.reason);
 }

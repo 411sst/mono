@@ -78,12 +78,16 @@ export function applyAction(state, action, map, rules, actorId) {
   if (!player || player.bankrupt) return reject('Invalid current player');
 
   switch (action.type) {
-    case 'ROLL':       return handleRoll(state, player, map, rules);
-    case 'BUY':        return handleBuy(state, player, map, rules);
-    case 'END_TURN':   return handleEndTurn(state, player, rules);
-    case 'PAY_JAIL':   return handlePayJail(state, player, map, rules);
-    case 'USE_PARDON': return handleUsePardon(state, player, map, rules);
-    default:           return reject('Unsupported action');
+    case 'ROLL':        return handleRoll(state, player, map, rules);
+    case 'BUY':         return handleBuy(state, player, map, rules);
+    case 'END_TURN':    return handleEndTurn(state, player, rules);
+    case 'PAY_JAIL':    return handlePayJail(state, player, map, rules);
+    case 'USE_PARDON':  return handleUsePardon(state, player, map, rules);
+    case 'MORTGAGE':    return handleMortgage(state, player, action, map, rules);
+    case 'UNMORTGAGE':  return handleUnmortgage(state, player, action, map, rules);
+    case 'BUILD_HOUSE': return handleBuildHouse(state, player, action, map, rules);
+    case 'SELL_HOUSE':  return handleSellHouse(state, player, action, map, rules);
+    default:            return reject('Unsupported action');
   }
 }
 
@@ -268,6 +272,79 @@ function handleTradeCancel(state, player, tradeId) {
   state.log.push({ t: Date.now(), type: 'TRADE_CANCEL', fromId: player.id });
   state.version += 1;
   return { ok: true, state, payload: { cancelled: true } };
+}
+
+// --- Property management handlers ---
+
+// Shared: look up house price for a space (falls back to formula if not in group config)
+function housePrice(space, map) {
+  const group = space.group ? map.groups?.[space.group] : null;
+  return group?.housePrice ?? Math.max(50, Math.round(space.price * 0.5 / 50) * 50);
+}
+
+function handleMortgage(state, player, action, map, rules) {
+  const space = map.spaces[action.spaceIndex];
+  if (!space || !['Property', 'Railroad', 'Utility'].includes(space.type)) return reject('Not a mortgageable space');
+  const ownership = state.ownership[action.spaceIndex];
+  if (!ownership || ownership.ownerId !== player.id) return reject('You do not own this property');
+  if (ownership.mortgaged) return reject('Already mortgaged');
+  if (ownership.houses > 0) return reject('Sell all houses before mortgaging');
+  const value = Math.floor(space.price * rules.mortgageRatio);
+  player.cash += value;
+  ownership.mortgaged = true;
+  state.log.push({ t: Date.now(), type: 'MORTGAGE', playerId: player.id, space: action.spaceIndex, amount: value });
+  state.version += 1;
+  return { ok: true, state, payload: { value } };
+}
+
+function handleUnmortgage(state, player, action, map, rules) {
+  const space = map.spaces[action.spaceIndex];
+  if (!space) return reject('Invalid space');
+  const ownership = state.ownership[action.spaceIndex];
+  if (!ownership || ownership.ownerId !== player.id) return reject('You do not own this property');
+  if (!ownership.mortgaged) return reject('Not mortgaged');
+  const cost = Math.floor(space.price * rules.unmortgageRatio);
+  if (player.cash < cost) return reject('Insufficient cash to unmortgage');
+  player.cash -= cost;
+  ownership.mortgaged = false;
+  state.log.push({ t: Date.now(), type: 'UNMORTGAGE', playerId: player.id, space: action.spaceIndex, amount: cost });
+  state.version += 1;
+  return { ok: true, state, payload: { cost } };
+}
+
+function handleBuildHouse(state, player, action, map, rules) {
+  const space = map.spaces[action.spaceIndex];
+  if (!space || space.type !== 'Property') return reject('Not a property');
+  const ownership = state.ownership[action.spaceIndex];
+  if (!ownership || ownership.ownerId !== player.id) return reject('You do not own this property');
+  if (ownership.mortgaged) return reject('Property is mortgaged');
+  const group = space.group ? map.groups?.[space.group] : null;
+  const maxHouses = group?.maxHouses ?? 4;
+  if (ownership.houses >= maxHouses) return reject('Maximum houses already built');
+  if (!isMonopolyOwned(state, player.id, map, space.group)) return reject('Must own the full colour group first');
+  const price = housePrice(space, map);
+  if (player.cash < price) return reject('Insufficient cash to build');
+  player.cash -= price;
+  ownership.houses += 1;
+  const isHotel = ownership.houses >= maxHouses;
+  state.log.push({ t: Date.now(), type: 'BUILD_HOUSE', playerId: player.id, space: action.spaceIndex, houses: ownership.houses, hotel: isHotel });
+  state.version += 1;
+  return { ok: true, state, payload: { houses: ownership.houses, hotel: isHotel } };
+}
+
+function handleSellHouse(state, player, action, map, rules) {
+  const space = map.spaces[action.spaceIndex];
+  if (!space) return reject('Invalid space');
+  const ownership = state.ownership[action.spaceIndex];
+  if (!ownership || ownership.ownerId !== player.id) return reject('You do not own this property');
+  if (ownership.houses <= 0) return reject('No houses to sell');
+  const price = housePrice(space, map);
+  const refund = Math.floor(price * 0.5);
+  player.cash += refund;
+  ownership.houses -= 1;
+  state.log.push({ t: Date.now(), type: 'SELL_HOUSE', playerId: player.id, space: action.spaceIndex, houses: ownership.houses, refund });
+  state.version += 1;
+  return { ok: true, state, payload: { houses: ownership.houses, refund } };
 }
 
 function handleBuy(state, player, map, rules) {
@@ -466,9 +543,11 @@ function resolveOwnable(state, player, space, rules, map) {
       .filter(([, o]) => o.ownerId === owner.id)
       .map(([idx]) => map.spaces[Number(idx)])
       .filter((s) => s?.type === 'Utility').length;
-    // Use a fresh dice roll for utility rent
+    // Use a fresh dice roll for utility rent; multiplier scales with how many companies owner holds
     const dice = rollDice();
-    const multiplier = ownedUtils >= 2 ? rules.utilityDiceMultiplierBoth : rules.utilityDiceMultiplierOne;
+    const multiplier = ownedUtils >= 3 ? rules.utilityDiceMultiplierThree
+                     : ownedUtils >= 2 ? rules.utilityDiceMultiplierBoth
+                     : rules.utilityDiceMultiplierOne;
     rent = dice.total * multiplier;
     state.log.push({ t: Date.now(), type: 'UTILITY_ROLL', playerId: player.id, d1: dice.d1, d2: dice.d2 });
   } else {

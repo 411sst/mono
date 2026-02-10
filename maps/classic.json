@@ -9,14 +9,14 @@
     "layout": "square"
   },
   "groups": {
-    "brown":     { "size": 2, "maxHouses": 4, "monopolyThreshold": 2, "color": "#92400e" },
-    "lightblue": { "size": 3, "maxHouses": 4, "monopolyThreshold": 3, "color": "#7dd3fc" },
-    "pink":      { "size": 3, "maxHouses": 4, "monopolyThreshold": 3, "color": "#f9a8d4" },
-    "orange":    { "size": 3, "maxHouses": 4, "monopolyThreshold": 3, "color": "#fb923c" },
-    "red":       { "size": 3, "maxHouses": 4, "monopolyThreshold": 3, "color": "#f87171" },
-    "yellow":    { "size": 3, "maxHouses": 4, "monopolyThreshold": 3, "color": "#fde047" },
-    "green":     { "size": 3, "maxHouses": 4, "monopolyThreshold": 3, "color": "#4ade80" },
-    "darkblue":  { "size": 2, "maxHouses": 4, "monopolyThreshold": 2, "color": "#1d4ed8" }
+    "brown":     { "size": 2, "maxHouses": 4, "monopolyThreshold": 2, "housePrice":  50, "color": "#92400e" },
+    "lightblue": { "size": 3, "maxHouses": 4, "monopolyThreshold": 3, "housePrice":  50, "color": "#7dd3fc" },
+    "pink":      { "size": 3, "maxHouses": 4, "monopolyThreshold": 3, "housePrice": 100, "color": "#f9a8d4" },
+    "orange":    { "size": 3, "maxHouses": 4, "monopolyThreshold": 3, "housePrice": 100, "color": "#fb923c" },
+    "red":       { "size": 3, "maxHouses": 4, "monopolyThreshold": 3, "housePrice": 150, "color": "#f87171" },
+    "yellow":    { "size": 3, "maxHouses": 4, "monopolyThreshold": 3, "housePrice": 150, "color": "#fde047" },
+    "green":     { "size": 3, "maxHouses": 4, "monopolyThreshold": 3, "housePrice": 200, "color": "#4ade80" },
+    "darkblue":  { "size": 2, "maxHouses": 4, "monopolyThreshold": 2, "housePrice": 200, "color": "#1d4ed8" }
   },
   "spaces": [
     { "index": 0,  "type": "Start",         "name": "GO" },
