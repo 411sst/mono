@@ -34,14 +34,22 @@ const server = http.createServer(async (req, res) => {
 
   if (req.method === 'POST' && url.pathname === '/api/queue') {
     const b = await body(req);
-    const p = sessions.enqueue((b.name || 'Guest').slice(0, 16));
+    const p = sessions.enqueue((b.name || 'Guest').slice(0, 16), b.mapId);
+    if (!p) return json(res, 400, { queued: false, reason: 'Map not found' });
     return json(res, 200, { queued: true, player: p, sessions: sessions.listSessions() });
   }
 
   if (req.method === 'POST' && url.pathname.match(/^\/api\/sessions\/[\w-]+\/action$/)) {
     const sessionId = url.pathname.split('/')[3];
     const b = await body(req);
-    const result = sessions.act(sessionId, b.action, b.expectedVersion);
+    const result = sessions.act(sessionId, b.action, b.expectedVersion, b.playerId);
+    return json(res, result.ok ? 200 : 400, result);
+  }
+
+  if (req.method === 'POST' && url.pathname.match(/^\/api\/sessions\/[\w-]+\/chat$/)) {
+    const sessionId = url.pathname.split('/')[3];
+    const b = await body(req);
+    const result = sessions.chat(sessionId, b.playerId, b.message || '');
     return json(res, result.ok ? 200 : 400, result);
   }
 

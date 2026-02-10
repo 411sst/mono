@@ -1,6 +1,18 @@
 let activeSession = null;
 let state = null;
 let map = null;
+let myPlayerId = null;
+let eventSource = null;
+
+// Stable color index per player (assigned on first render)
+const playerColorIndex = {};
+const COLORS = ['p-color-0','p-color-1','p-color-2','p-color-3','p-color-4','p-color-5'];
+function colorFor(playerId) {
+  if (playerColorIndex[playerId] === undefined) {
+    playerColorIndex[playerId] = Object.keys(playerColorIndex).length % COLORS.length;
+  }
+  return COLORS[playerColorIndex[playerId]];
+}
 
 const el = (id) => document.getElementById(id);
 
@@ -14,19 +26,21 @@ async function refreshSessions() {
   el('sessions').innerHTML = '';
   data.sessions.forEach((s) => {
     const li = document.createElement('li');
-    li.innerHTML = `${s.id.slice(0, 8)} | players: ${s.players.join(', ')} <button>Watch</button>`;
+    const status = s.status === 'finished' ? ' [FINISHED]' : '';
+    li.innerHTML = `${s.id.slice(0, 8)} | ${s.players.join(' vs ')}${status} <button>Watch</button>`;
     li.querySelector('button').onclick = () => joinSession(s.id);
     el('sessions').appendChild(li);
   });
 }
 
 async function joinSession(id) {
+  if (eventSource) eventSource.close();
   activeSession = id;
   el('gamePanel').hidden = false;
   const maps = await api('/api/maps');
   map = maps.maps[0];
-  const es = new EventSource(`/api/sessions/${id}/stream`);
-  es.onmessage = (evt) => {
+  eventSource = new EventSource(`/api/sessions/${id}/stream`);
+  eventSource.onmessage = (evt) => {
     const msg = JSON.parse(evt.data);
     if (msg.state) {
       state = msg.state;
@@ -35,39 +49,418 @@ async function joinSession(id) {
   };
 }
 
+// --- Rendering ---
+
 function render() {
-  el('board').innerHTML = '';
-  map.spaces.forEach((space) => {
-    const div = document.createElement('div');
-    const owned = state.ownership[space.index] ? 'owned' : '';
-    div.className = `space ${owned}`;
-    div.innerHTML = `<strong>${space.name}</strong><br/>${space.type}`;
-    el('board').appendChild(div);
-  });
-  el('dash').innerHTML = state.players.map((p, i) => {
-    const turn = i === state.turn.index ? '⬅️ turn' : '';
-    return `${p.name}: $${p.cash} pos:${p.position} ${turn}`;
-  }).join('<br/>');
+  renderBoard();
+  renderDash();
+  renderDice();
+  renderActions();
+  renderPropPanel();
+  renderTrade();
+  renderChat();
+  if (state.status === 'finished') renderGameOver();
 }
 
-el('queueBtn').onclick = async () => {
-  const data = await api('/api/queue', { method: 'POST', body: JSON.stringify({ name: el('name').value }) });
-  el('queueStatus').textContent = data.queued ? 'Queued. Refresh sessions to join game.' : 'Queue failed';
-  refreshSessions();
+function renderBoard() {
+  const board = el('board');
+  board.innerHTML = '';
+  map.spaces.forEach((space) => {
+    const div = document.createElement('div');
+    const owned = state.ownership[space.index];
+    const players = state.players.filter((p) => p.position === space.index && !p.bankrupt);
+    let cls = `space ${space.type.toLowerCase()}`;
+    if (owned) cls += ' owned';
+    div.className = cls;
+
+    const group = space.group && map.groups?.[space.group];
+    const colorDot = group?.color
+      ? `<span class="group-dot" style="background:${group.color}"></span>`
+      : '';
+    const ownerName = owned ? state.players.find((p) => p.id === owned.ownerId)?.name : '';
+    const ownerTag = ownerName ? `<span class="owner">${owned.mortgaged ? '📌 ' : ''}${ownerName}</span>` : '';
+    const maxH = group?.maxHouses ?? 4;
+    const houseTag = owned?.houses > 0
+      ? `<span class="house-tag">${owned.houses >= maxH ? '🏨' : '🏠'.repeat(owned.houses)}</span>`
+      : '';
+    const tokens = players.map((p) => {
+      const colorCls = colorFor(p.id);
+      return `<span class="token ${colorCls}" title="${p.name}">${p.name[0]}</span>`;
+    }).join('');
+
+    div.innerHTML = `${colorDot}<strong>${space.name}</strong><small>${space.type}</small>${ownerTag}${houseTag}${tokens ? `<div class="tokens">${tokens}</div>` : ''}`;
+    board.appendChild(div);
+  });
+}
+
+function renderDash() {
+  el('dash').innerHTML = state.players.map((p, i) => {
+    const isActive = i === state.turn.index;
+    const isMe = p.id === myPlayerId;
+    const colorCls = colorFor(p.id);
+    const tags = [
+      p.inJail        ? '<span class="pc-tag jail">Jail</span>' : '',
+      p.pardonCards > 0 ? `<span class="pc-tag pardon">🃏 ×${p.pardonCards}</span>` : '',
+      p.bankrupt      ? '<span class="pc-tag bankrupt">Bankrupt</span>' : '',
+    ].join('');
+    const turnBadge = isActive ? '<span class="turn-indicator">Turn</span>' : '';
+    return `<div class="player-card${isMe ? ' me' : ''}${isActive ? ' active' : ''}${p.bankrupt ? ' bankrupt' : ''}">
+      ${turnBadge}
+      <div class="pc-name">
+        <span class="player-avatar ${colorCls}">${p.name[0]}</span>
+        ${p.name}${isMe ? ' <small style="color:var(--text3);font-weight:400">(you)</small>' : ''}
+      </div>
+      <div class="pc-cash">$${p.cash.toLocaleString()}</div>
+      ${tags ? `<div class="pc-tags">${tags}</div>` : ''}
+    </div>`;
+  }).join('');
+
+  // Show last log entry
+  const lastEvent = state.log[state.log.length - 1];
+  if (lastEvent) {
+    const actor = state.players.find((p) => p.id === lastEvent.playerId);
+    const name = actor?.name || '';
+    let msg = '';
+    switch (lastEvent.type) {
+      case 'ROLL':            msg = `🎲 ${name} rolled ${lastEvent.d1}+${lastEvent.d2}=${lastEvent.d1+lastEvent.d2} → landed on ${lastEvent.landed}`; break;
+      case 'BUY':             msg = `🏠 ${name} bought ${map?.spaces[lastEvent.space]?.name || `#${lastEvent.space}`}`; break;
+      case 'RENT':            msg = `💸 ${name} paid $${lastEvent.amount} rent`; break;
+      case 'GO_SALARY':       msg = `💰 ${name} collected $${lastEvent.amount} passing GO`; break;
+      case 'CARD':            msg = `🃏 ${name} drew a ${lastEvent.deck} card: "${lastEvent.desc}"`; break;
+      case 'BANKRUPT':        msg = `💀 ${name} went bankrupt!`; break;
+      case 'JAIL_ROLL':       msg = `🎲 ${name} rolled ${lastEvent.d1}+${lastEvent.d2} in jail`; break;
+      case 'JAIL_ESCAPE':     msg = `🔓 ${name} escaped jail! → ${lastEvent.landed}`; break;
+      case 'PAY_JAIL':        msg = `⛓ ${name} paid $${lastEvent.fine} to leave jail`; break;
+      case 'USE_PARDON':      msg = `🃏 ${name} used a Pardon card to leave jail`; break;
+      case 'MORTGAGE':        msg = `📌 ${name} mortgaged ${map?.spaces[lastEvent.space]?.name} (+$${lastEvent.amount})`; break;
+      case 'UNMORTGAGE':      msg = `✅ ${name} unmortgaged ${map?.spaces[lastEvent.space]?.name} (-$${lastEvent.amount})`; break;
+      case 'BUILD_HOUSE':     msg = `${lastEvent.hotel ? '🏨' : '🏠'} ${name} built a ${lastEvent.hotel ? 'hotel' : 'house'} on ${map?.spaces[lastEvent.space]?.name}`; break;
+      case 'SELL_HOUSE':      msg = `💰 ${name} sold a house on ${map?.spaces[lastEvent.space]?.name} (+$${lastEvent.refund})`; break;
+      case 'TRADE_OFFER':     msg = `🤝 ${name} proposed a trade`; break;
+      case 'TRADE_ACCEPT':    msg = `✅ ${name} accepted a trade`; break;
+      case 'TRADE_REJECT':    msg = `❌ ${name} rejected a trade`; break;
+      case 'TRADE_CANCEL':    msg = `↩ ${name} cancelled a trade offer`; break;
+      case 'PARDON_RECEIVED': msg = `🃏 ${name} received a Get Out of Jail Free card`; break;
+      case 'EACH_PLAYER':     msg = lastEvent.amount > 0 ? `💰 ${name} collected $${lastEvent.amount} from each player` : `💸 ${name} paid $${-lastEvent.amount} to each player`; break;
+      case 'RENOVATION':      msg = `🔨 ${name} paid $${lastEvent.amount} for property renovations`; break;
+      case 'RANDOM_CITY':     msg = `✈ ${name} advanced to ${lastEvent.landed}`; break;
+      case 'TIMEOUT':         msg = `⏱ ${name} timed out (penalty: $${lastEvent.count * 50})`; break;
+      case 'GAME_OVER':       msg = `🏆 Game over!`; break;
+      default:                msg = lastEvent.type;
+    }
+    el('lastEvent').textContent = msg;
+  }
+}
+
+// Dice pip layouts: which of the 9 grid cells (0–8, row-major) get a pip per face value
+const PIP_POSITIONS = {
+  1: [4],
+  2: [0, 8],
+  3: [0, 4, 8],
+  4: [0, 2, 6, 8],
+  5: [0, 2, 4, 6, 8],
+  6: [0, 2, 3, 5, 6, 8],
 };
 
-el('rollBtn').onclick = () => sendAction('ROLL');
-el('buyBtn').onclick = () => sendAction('BUY');
-el('endBtn').onclick = () => sendAction('END_TURN');
+function dieSvg(value, rolling) {
+  const cells = Array(9).fill('');
+  (PIP_POSITIONS[value] || []).forEach((i) => { cells[i] = '<span class="pip"></span>'; });
+  return `<div class="die${rolling ? ' rolling' : ''}">${cells.join('')}</div>`;
+}
 
-async function sendAction(type) {
-  if (!activeSession || !state) return;
+let lastDice = null;
+function renderDice() {
+  const lastRoll = [...(state.log || [])].reverse().find((e) => e.type === 'ROLL' || e.type === 'JAIL_ROLL' || e.type === 'JAIL_ESCAPE');
+  const row = el('diceRow');
+  if (!lastRoll) { row.innerHTML = ''; return; }
+  const same = lastDice && lastDice.d1 === lastRoll.d1 && lastDice.d2 === lastRoll.d2 && lastDice.turn === state.turn.index;
+  const rolling = !same;
+  lastDice = { d1: lastRoll.d1, d2: lastRoll.d2, turn: state.turn.index };
+  const doubles = lastRoll.d1 === lastRoll.d2;
+  row.innerHTML = dieSvg(lastRoll.d1, rolling) + dieSvg(lastRoll.d2, rolling)
+    + `<span class="die-total">= ${lastRoll.d1 + lastRoll.d2}</span>`
+    + (doubles ? '<span class="die-doubles">Doubles!</span>' : '');
+}
+
+function renderActions() {
+  const isMyTurn = myPlayerId && state.players[state.turn.index]?.id === myPlayerId;
+  const me = state.players.find((p) => p.id === myPlayerId);
+  const finished = state.status === 'finished';
+
+  el('rollBtn').disabled = !isMyTurn || finished;
+  el('endBtn').disabled = !isMyTurn || finished;
+  el('buyBtn').disabled = !isMyTurn || finished;
+  el('payJailBtn').hidden = !isMyTurn || !me?.inJail || finished;
+  el('usePardonBtn').hidden = !isMyTurn || !me?.inJail || !(me?.pardonCards > 0) || finished;
+  el('rollBtn').hidden = false;
+  el('endBtn').hidden = false;
+}
+
+function renderGameOver() {
+  const winner = state.players.find((p) => p.id === state.winner);
+  el('gameOver').hidden = false;
+  el('gameOver').textContent = winner ? `Game over! ${winner.name} wins!` : 'Game over!';
+}
+
+// --- Property management ---
+
+function getHousePrice(space) {
+  const group = space.group ? map?.groups?.[space.group] : null;
+  return group?.housePrice ?? Math.max(50, Math.round(space.price * 0.5 / 50) * 50);
+}
+
+function hasFullGroup(spaceIdx) {
+  const space = map?.spaces[spaceIdx];
+  if (!space?.group) return false;
+  return map.spaces
+    .filter((s) => s.group === space.group && s.type === 'Property')
+    .every((s) => state.ownership[s.index]?.ownerId === myPlayerId);
+}
+
+function renderPropPanel() {
+  if (!state || !myPlayerId || !map) return;
+  const isMyTurn = state.players[state.turn.index]?.id === myPlayerId;
+  const panel = el('propPanel');
+  if (!isMyTurn || state.status === 'finished') { panel.hidden = true; return; }
+
+  const myProps = Object.entries(state.ownership)
+    .filter(([, o]) => o.ownerId === myPlayerId)
+    .map(([idx, ownership]) => ({ idx: Number(idx), space: map.spaces[Number(idx)], ownership }))
+    .filter((p) => p.space)
+    .sort((a, b) => a.idx - b.idx);
+
+  if (myProps.length === 0) { panel.hidden = true; return; }
+  panel.hidden = false;
+
+  el('propList').innerHTML = myProps.map(({ idx, space, ownership }) => {
+    const group = space.group ? map.groups?.[space.group] : null;
+    const maxH = group?.maxHouses ?? 4;
+    const price = space.type === 'Property' ? getHousePrice(space) : 0;
+    const canBuild   = space.type === 'Property' && !ownership.mortgaged && ownership.houses < maxH && hasFullGroup(idx);
+    const canSell    = space.type === 'Property' && ownership.houses > 0;
+    const canMort    = !ownership.mortgaged && ownership.houses === 0;
+    const canUnmort  = ownership.mortgaged;
+    const mortVal    = Math.floor(space.price * 0.5);
+    const unmortCost = Math.floor(space.price * 0.55);
+    const houseStr   = ownership.houses >= maxH ? '🏨' : '🏠'.repeat(ownership.houses);
+    const dot = group?.color ? `<span class="prop-dot" style="background:${group.color}"></span>` : '';
+    const mortLabel  = ownership.mortgaged ? ' [M]' : '';
+    return `<div class="prop-row">
+      <span class="prop-name">${dot}${space.name}${mortLabel}${houseStr ? ` ${houseStr}` : ''}</span>
+      <div class="prop-btns">
+        ${canBuild  ? `<button class="prop-build"    data-idx="${idx}" title="Build house ($${price})">🏠+</button>` : ''}
+        ${canSell   ? `<button class="prop-sell"     data-idx="${idx}" title="Sell house (+$${Math.floor(price/2)})">🏠−</button>` : ''}
+        ${canMort   ? `<button class="prop-mortgage" data-idx="${idx}" title="Mortgage (+$${mortVal})">Mortgage</button>` : ''}
+        ${canUnmort ? `<button class="prop-unmortgage" data-idx="${idx}" title="Unmortgage (−$${unmortCost})">Unmortgage</button>` : ''}
+      </div>
+    </div>`;
+  }).join('');
+
+  el('propList').querySelectorAll('.prop-build').forEach((btn) =>
+    btn.addEventListener('click', () => sendAction('BUILD_HOUSE', { spaceIndex: Number(btn.dataset.idx) })));
+  el('propList').querySelectorAll('.prop-sell').forEach((btn) =>
+    btn.addEventListener('click', () => sendAction('SELL_HOUSE', { spaceIndex: Number(btn.dataset.idx) })));
+  el('propList').querySelectorAll('.prop-mortgage').forEach((btn) =>
+    btn.addEventListener('click', () => sendAction('MORTGAGE', { spaceIndex: Number(btn.dataset.idx) })));
+  el('propList').querySelectorAll('.prop-unmortgage').forEach((btn) =>
+    btn.addEventListener('click', () => sendAction('UNMORTGAGE', { spaceIndex: Number(btn.dataset.idx) })));
+}
+
+// --- Trade ---
+
+function tradeCardHtml(trade) {
+  const from = state.players.find((p) => p.id === trade.fromId);
+  const to   = state.players.find((p) => p.id === trade.toId);
+  const offerProps   = trade.offer.properties.map((i) => map?.spaces[i]?.name   || `#${i}`).join(', ') || '—';
+  const requestProps = trade.request.properties.map((i) => map?.spaces[i]?.name || `#${i}`).join(', ') || '—';
+  const isMeRecipient = myPlayerId && trade.toId   === myPlayerId;
+  const isMeOfferer   = myPlayerId && trade.fromId === myPlayerId;
+  const buttons = [
+    isMeRecipient ? `<button class="trade-accept-btn" data-id="${trade.id}">Accept</button>` : '',
+    isMeRecipient ? `<button class="trade-reject-btn" data-id="${trade.id}">Reject</button>` : '',
+    isMeOfferer   ? `<button class="trade-cancel-btn" data-id="${trade.id}">Cancel</button>` : '',
+  ].join('');
+  return `
+    <div class="pending-trade-card" data-id="${trade.id}">
+      <div class="trade-header"><strong>${from?.name}</strong> → <strong>${to?.name}</strong>
+        ${trade.message ? `<em class="trade-msg">"${escHtml(trade.message)}"</em>` : ''}
+      </div>
+      <div class="trade-cols">
+        <div class="trade-section">
+          <strong>${from?.name} offers</strong>
+          <div>💵 $${trade.offer.cash}</div>
+          <div>🏠 ${offerProps}</div>
+          ${trade.offer.pardonCards ? `<div>🃏 ${trade.offer.pardonCards} pardon(s)</div>` : ''}
+        </div>
+        <div class="trade-section">
+          <strong>${from?.name} wants</strong>
+          <div>💵 $${trade.request.cash}</div>
+          <div>🏠 ${requestProps}</div>
+          ${trade.request.pardonCards ? `<div>🃏 ${trade.request.pardonCards} pardon(s)</div>` : ''}
+        </div>
+      </div>
+      ${buttons ? `<div class="pending-trade-actions">${buttons}</div>` : ''}
+    </div>`;
+}
+
+function renderTrade() {
+  if (!state) return;
+
+  // Pending trades list
+  const trades = state.pendingTrades || [];
+  const myTrades = trades.filter((t) => t.fromId === myPlayerId || t.toId === myPlayerId);
+  el('pendingTrade').hidden = myTrades.length === 0;
+  el('pendingTradeDetails').innerHTML = myTrades.map(tradeCardHtml).join('');
+
+  // Wire up inline buttons (replaces static tradeAcceptBtn etc.)
+  el('pendingTradeDetails').querySelectorAll('.trade-accept-btn').forEach((btn) =>
+    btn.addEventListener('click', () => sendTradeAction('TRADE_ACCEPT', { tradeId: btn.dataset.id })));
+  el('pendingTradeDetails').querySelectorAll('.trade-reject-btn').forEach((btn) =>
+    btn.addEventListener('click', () => sendTradeAction('TRADE_REJECT', { tradeId: btn.dataset.id })));
+  el('pendingTradeDetails').querySelectorAll('.trade-cancel-btn').forEach((btn) =>
+    btn.addEventListener('click', () => sendTradeAction('TRADE_CANCEL', { tradeId: btn.dataset.id })));
+
+  // Always show the new-offer form
+  el('newTradeForm').hidden = false;
+
+  // Populate target selector
+  const targetSel = el('tradeTarget');
+  const prevTarget = targetSel.value;
+  targetSel.innerHTML = '';
+  state.players.filter((p) => !p.bankrupt && p.id !== myPlayerId).forEach((p) => {
+    const opt = document.createElement('option');
+    opt.value = p.id;
+    opt.textContent = p.name;
+    targetSel.appendChild(opt);
+  });
+  if (prevTarget) targetSel.value = prevTarget;
+
+  // My properties (offer side)
+  const myProps = Object.entries(state.ownership || {})
+    .filter(([, o]) => o.ownerId === myPlayerId)
+    .map(([idx]) => ({ idx: Number(idx), name: map?.spaces[Number(idx)]?.name || `#${idx}` }));
+  el('tradePropsOffer').innerHTML = myProps.map((p) =>
+    `<label><input type="checkbox" class="prop-offer" value="${p.idx}"> ${p.name}</label>`
+  ).join('');
+
+  populateRequestProps();
+}
+
+function populateRequestProps() {
+  const targetId = el('tradeTarget').value;
+  const targetProps = Object.entries(state.ownership || {})
+    .filter(([, o]) => o.ownerId === targetId)
+    .map(([idx]) => ({ idx: Number(idx), name: map?.spaces[Number(idx)]?.name || `#${idx}` }));
+  el('tradePropsRequest').innerHTML = targetProps.map((p) =>
+    `<label><input type="checkbox" class="prop-request" value="${p.idx}"> ${p.name}</label>`
+  ).join('');
+}
+
+el('tradeTarget')?.addEventListener('change', populateRequestProps);
+
+el('tradeOfferBtn').onclick = () => {
+  if (!myPlayerId || !activeSession) return;
+  const toId     = el('tradeTarget').value;
+  const cash     = Number(el('tradeCashOffer').value) || 0;
+  const reqCash  = Number(el('tradeCashRequest').value) || 0;
+  const offerProps   = [...document.querySelectorAll('.prop-offer:checked')].map((c) => Number(c.value));
+  const requestProps = [...document.querySelectorAll('.prop-request:checked')].map((c) => Number(c.value));
+  const pardonOffer   = el('tradePardonOffer').checked ? 1 : 0;
+  const pardonRequest = el('tradePardonRequest').checked ? 1 : 0;
+  const message = el('tradeMessage').value.trim();
+  sendTradeAction('TRADE_OFFER', {
+    toId,
+    offer:   { cash, properties: offerProps, pardonCards: pardonOffer },
+    request: { cash: reqCash, properties: requestProps, pardonCards: pardonRequest },
+    message: message || null,
+  });
+};
+
+// Accept / Reject / Cancel buttons are created dynamically per trade in renderTrade()
+
+async function sendTradeAction(type, extra = {}) {
+  if (!activeSession) return;
   const out = await api(`/api/sessions/${activeSession}/action`, {
     method: 'POST',
-    body: JSON.stringify({ action: { type }, expectedVersion: state.version })
+    body: JSON.stringify({ action: { type, ...extra }, expectedVersion: state?.version, playerId: myPlayerId }),
   });
   if (!out.ok) alert(out.reason);
 }
 
+// --- Chat ---
+
+function renderChat() {
+  if (!state?.chat) return;
+  const box = el('chatMessages');
+  box.innerHTML = state.chat.map((m) => {
+    const isMe = m.playerId === myPlayerId;
+    return `<div class="chat-msg${isMe ? ' mine' : ''}"><strong>${m.name}:</strong> ${escHtml(m.text)}</div>`;
+  }).join('');
+  box.scrollTop = box.scrollHeight;
+}
+
+function escHtml(s) {
+  return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+}
+
+async function sendChat() {
+  const input = el('chatInput');
+  const text = input.value.trim();
+  if (!text || !activeSession || !myPlayerId) return;
+  input.value = '';
+  await api(`/api/sessions/${activeSession}/chat`, {
+    method: 'POST',
+    body: JSON.stringify({ playerId: myPlayerId, message: text }),
+  });
+}
+
+el('chatSendBtn').onclick = sendChat;
+el('chatInput').addEventListener('keydown', (e) => { if (e.key === 'Enter') sendChat(); });
+
+// --- Queue ---
+
+el('queueBtn').onclick = async () => {
+  const name = el('name').value.trim() || 'Guest';
+  const mapId = el('mapSelect').value;
+  const data = await api('/api/queue', { method: 'POST', body: JSON.stringify({ name, mapId }) });
+  myPlayerId = data.player?.id || null;
+  el('queueStatus').textContent = data.queued
+    ? `Queued as "${data.player.name}" (id: ${data.player.id.slice(0, 8)}…). Waiting for opponent…`
+    : 'Queue failed';
+  refreshSessions();
+};
+
+// --- Actions ---
+
+el('rollBtn').onclick       = () => sendAction('ROLL');
+el('buyBtn').onclick        = () => sendAction('BUY');
+el('endBtn').onclick        = () => sendAction('END_TURN');
+el('payJailBtn').onclick    = () => sendAction('PAY_JAIL');
+el('usePardonBtn').onclick  = () => sendAction('USE_PARDON');
+
+async function sendAction(type, extra = {}) {
+  if (!activeSession || !state) return;
+  const out = await api(`/api/sessions/${activeSession}/action`, {
+    method: 'POST',
+    body: JSON.stringify({ action: { type, ...extra }, expectedVersion: state.version, playerId: myPlayerId })
+  });
+  if (!out.ok) alert(out.reason);
+}
+
+// --- Boot ---
+
+async function loadMaps() {
+  const data = await api('/api/maps');
+  const sel = el('mapSelect');
+  sel.innerHTML = '';
+  data.maps.forEach((m) => {
+    const opt = document.createElement('option');
+    opt.value = m.id;
+    opt.textContent = m.name;
+    sel.appendChild(opt);
+  });
+}
+
+loadMaps();
 refreshSessions();
 setInterval(refreshSessions, 4000);

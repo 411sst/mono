@@ -1,77 +1,589 @@
+import { randomUUID } from 'node:crypto';
 import { currentPlayer } from './state.js';
 
+// --- Card decks ---
+
+// Surprise cards (Chance) — 17 cards from richup.io
+// Cards 9, 12, 17 are "advance to random city" (replacing specific city advances)
+const CHANCE_CARDS = [
+  { desc: 'Advance to the next airport',                                  effect: { type: 'nearestRailroad' } },
+  { desc: 'Go back 3 steps',                                              effect: { type: 'back',        amount: 3 } },
+  { desc: 'Advance to Start',                                             effect: { type: 'move',        to: 0 } },
+  { desc: 'Pay tax of $20',                                               effect: { type: 'cash',        amount: -20 } },
+  { desc: 'Advance to the next company',                                  effect: { type: 'nearestUtility' } },
+  { desc: 'Stock agency pays you dividend of $60',                        effect: { type: 'cash',        amount: 60 } },
+  { desc: 'Got a Pardon card from the surprises stack',                   effect: { type: 'pardon' } },
+  { desc: 'Go to prison',                                                 effect: { type: 'jail' } },
+  { desc: 'Advance to a random city',                                     effect: { type: 'randomCity' } },
+  { desc: 'You have a new investment. Receive $150',                      effect: { type: 'cash',        amount: 150 } },
+  { desc: 'You lost a bet. Pay each player $50',                          effect: { type: 'eachPlayer',  amount: -50 } },
+  { desc: 'Advance to a random city',                                     effect: { type: 'randomCity' } },
+  { desc: 'Have a redesign for your properties. Pay $25/house $100/hotel',effect: { type: 'renovation',  houseCost: 25, hotelCost: 100 } },
+  { desc: 'From a scholarship you get $100',                              effect: { type: 'cash',        amount: 100 } },
+  { desc: 'Take a trip to the nearest airport',                           effect: { type: 'nearestRailroad' } },
+  { desc: 'Your cousin needs some financial assistance. Pay $50',         effect: { type: 'cash',        amount: -50 } },
+  { desc: 'Advance to a random city',                                     effect: { type: 'randomCity' } },
+];
+
+// Treasure cards (Community Chest) — 17 cards from richup.io
+const COMMUNITY_CHEST_CARDS = [
+  { desc: 'Happy holidays — receive $20',                                 effect: { type: 'cash',        amount: 20 } },
+  { desc: 'From trading stocks you earned $50',                           effect: { type: 'cash',        amount: 50 } },
+  { desc: 'You received $100 from your sibling',                          effect: { type: 'cash',        amount: 100 } },
+  { desc: 'Advance to Start',                                             effect: { type: 'move',        to: 0 } },
+  { desc: 'Go to prison',                                                 effect: { type: 'jail' } },
+  { desc: 'From gift cards you get $100',                                 effect: { type: 'cash',        amount: 100 } },
+  { desc: 'You found a wallet containing some cash. Collect $200',        effect: { type: 'cash',        amount: 200 } },
+  { desc: 'You have won third prize in a lottery. Collect $15',           effect: { type: 'cash',        amount: 15 } },
+  { desc: "It's time to renovate. Pay $30/house $120/hotel",              effect: { type: 'renovation',  houseCost: 30, hotelCost: 120 } },
+  { desc: 'Beneficial business decisions. You made a profit of $25',      effect: { type: 'cash',        amount: 25 } },
+  { desc: 'Tax refund. Collect $100',                                     effect: { type: 'cash',        amount: 100 } },
+  { desc: 'Your phone died. Pay $50 for a repair',                        effect: { type: 'cash',        amount: -50 } },
+  { desc: 'Got a Pardon card from the treasures stack',                   effect: { type: 'pardon' } },
+  { desc: 'You host a party. Collect $50 from every player',              effect: { type: 'eachPlayer',  amount: 50 } },
+  { desc: 'Your car has run out of gas. Pay $50',                         effect: { type: 'cash',        amount: -50 } },
+  { desc: 'Happy birthday! Collect $10 from every player',                effect: { type: 'eachPlayer',  amount: 10 } },
+  { desc: 'Car rental insurance. Pay $60',                                effect: { type: 'cash',        amount: -60 } },
+];
+
+// --- Dice ---
+
 function rollDice() {
-  return 1 + Math.floor(Math.random() * 6) + 1 + Math.floor(Math.random() * 6);
+  const d1 = 1 + Math.floor(Math.random() * 6);
+  const d2 = 1 + Math.floor(Math.random() * 6);
+  return { d1, d2, total: d1 + d2, doubles: d1 === d2 };
 }
 
-export function applyAction(state, action, map, rules) {
+// --- Main action dispatcher ---
+
+export function applyAction(state, action, map, rules, actorId) {
+  if (state.status === 'finished') return reject('Game is already finished');
+
+  // Trade actions may be performed by any non-bankrupt player, not just the current turn player
+  const tradeTypes = new Set(['TRADE_OFFER', 'TRADE_ACCEPT', 'TRADE_REJECT', 'TRADE_CANCEL']);
+  if (tradeTypes.has(action.type)) {
+    const player = actorId
+      ? state.players.find((p) => p.id === actorId && !p.bankrupt)
+      : currentPlayer(state);
+    if (!player) return reject('Invalid player');
+    switch (action.type) {
+      case 'TRADE_OFFER':  return handleTradeOffer(state, player, action);
+      case 'TRADE_ACCEPT': return handleTradeAccept(state, player, action.tradeId);
+      case 'TRADE_REJECT': return handleTradeReject(state, player, action.tradeId);
+      case 'TRADE_CANCEL': return handleTradeCancel(state, player, action.tradeId);
+    }
+  }
+
   const player = currentPlayer(state);
   if (!player || player.bankrupt) return reject('Invalid current player');
 
   switch (action.type) {
-    case 'ROLL': {
-      const delta = rollDice();
-      player.position = (player.position + delta) % map.spaces.length;
-      const space = map.spaces[player.position];
-      state.log.push({ t: Date.now(), type: 'ROLL', playerId: player.id, delta, landed: space.name });
-      resolveSpace(state, player, space, rules, map);
-      advanceTurn(state, rules);
-      return accept(state, { delta, space });
-    }
-    case 'BUY': {
-      const space = map.spaces[player.position];
-      if (!space || !['Property', 'Railroad', 'Utility'].includes(space.type)) return reject('Not purchasable');
-      if (state.ownership[space.index]) return reject('Already owned');
-      if (player.cash < space.price) return reject('Insufficient cash');
-      player.cash -= space.price;
-      state.ownership[space.index] = { ownerId: player.id, mortgaged: false, houses: 0 };
-      state.log.push({ t: Date.now(), type: 'BUY', playerId: player.id, space: space.index });
-      return accept(state, { bought: space.index });
-    }
-    case 'END_TURN': {
-      advanceTurn(state, rules);
-      state.log.push({ t: Date.now(), type: 'END_TURN', playerId: player.id });
-      return accept(state, {});
-    }
-    default:
-      return reject('Unsupported action');
+    case 'ROLL':        return handleRoll(state, player, map, rules);
+    case 'BUY':         return handleBuy(state, player, map, rules);
+    case 'END_TURN':    return handleEndTurn(state, player, rules);
+    case 'PAY_JAIL':    return handlePayJail(state, player, map, rules);
+    case 'USE_PARDON':  return handleUsePardon(state, player, map, rules);
+    case 'MORTGAGE':    return handleMortgage(state, player, action, map, rules);
+    case 'UNMORTGAGE':  return handleUnmortgage(state, player, action, map, rules);
+    case 'BUILD_HOUSE': return handleBuildHouse(state, player, action, map, rules);
+    case 'SELL_HOUSE':  return handleSellHouse(state, player, action, map, rules);
+    default:            return reject('Unsupported action');
   }
 }
+
+// --- Action handlers ---
+
+function handleRoll(state, player, map, rules) {
+  if (player.inJail) return handleJailRoll(state, player, map, rules);
+
+  const dice = rollDice();
+  const oldPos = player.position;
+  player.position = (oldPos + dice.total) % map.spaces.length;
+  const passedGo = oldPos + dice.total >= map.spaces.length;
+  if (passedGo || player.position === 0) {
+    player.cash += rules.goSalary;
+    state.log.push({ t: Date.now(), type: 'GO_SALARY', playerId: player.id, amount: rules.goSalary });
+  }
+  const space = map.spaces[player.position];
+  state.log.push({ t: Date.now(), type: 'ROLL', playerId: player.id, d1: dice.d1, d2: dice.d2, landed: space.name });
+  resolveSpace(state, player, space, rules, map);
+  checkBankruptcy(state, player, map);
+  checkWin(state);
+  advanceTurn(state, rules);
+  return accept(state, { d1: dice.d1, d2: dice.d2, space });
+}
+
+function handleJailRoll(state, player, map, rules) {
+  const dice = rollDice();
+  state.log.push({ t: Date.now(), type: 'JAIL_ROLL', playerId: player.id, d1: dice.d1, d2: dice.d2 });
+
+  if (dice.doubles) {
+    // Escape on doubles — move without collecting GO salary
+    player.inJail = false;
+    player.jailTurns = 0;
+    player.position = (rules.jailIndex + dice.total) % map.spaces.length;
+    const space = map.spaces[player.position];
+    state.log.push({ t: Date.now(), type: 'JAIL_ESCAPE', playerId: player.id, landed: space.name });
+    resolveSpace(state, player, space, rules, map);
+    checkBankruptcy(state, player, map);
+    checkWin(state);
+    advanceTurn(state, rules);
+    return accept(state, { d1: dice.d1, d2: dice.d2, space, jailEscape: true });
+  }
+
+  player.jailTurns += 1;
+  if (player.jailTurns >= 3) {
+    // Force out after 3 turns — pay fine
+    player.cash -= rules.jailFine;
+    player.inJail = false;
+    player.jailTurns = 0;
+    player.position = (rules.jailIndex + dice.total) % map.spaces.length;
+    const space = map.spaces[player.position];
+    state.log.push({ t: Date.now(), type: 'JAIL_FORCE_OUT', playerId: player.id, fine: rules.jailFine, landed: space.name });
+    resolveSpace(state, player, space, rules, map);
+    checkBankruptcy(state, player, map);
+    checkWin(state);
+    advanceTurn(state, rules);
+    return accept(state, { d1: dice.d1, d2: dice.d2, space, jailForceOut: true });
+  }
+
+  // Stay in jail — turn wasted
+  advanceTurn(state, rules);
+  return accept(state, { d1: dice.d1, d2: dice.d2, stayedInJail: true });
+}
+
+function handlePayJail(state, player, map, rules) {
+  if (!player.inJail) return reject('Not in jail');
+  player.cash -= rules.jailFine;
+  player.inJail = false;
+  player.jailTurns = 0;
+  state.log.push({ t: Date.now(), type: 'PAY_JAIL', playerId: player.id, fine: rules.jailFine });
+  // Don't advance turn — player now rolls
+  state.version += 1;
+  return { ok: true, state, payload: { paidJail: true } };
+}
+
+function handleUsePardon(state, player, map, rules) {
+  if (!player.inJail) return reject('Not in jail');
+  if (!player.pardonCards || player.pardonCards < 1) return reject('No Pardon card');
+  player.pardonCards -= 1;
+  player.inJail = false;
+  player.jailTurns = 0;
+  state.log.push({ t: Date.now(), type: 'USE_PARDON', playerId: player.id });
+  // Player now rolls freely next action — don't advance turn
+  state.version += 1;
+  return { ok: true, state, payload: { usedPardon: true } };
+}
+
+// --- Trade handlers ---
+
+function handleTradeOffer(state, player, action) {
+  const { toId, offer = {}, request = {}, message } = action;
+  if (!toId || toId === player.id) return reject('Invalid trade target');
+  const target = state.players.find((p) => p.id === toId && !p.bankrupt);
+  if (!target) return reject('Target player not found or bankrupt');
+
+  // Each player may have at most one outgoing offer per recipient at a time
+  const duplicate = state.pendingTrades.find((t) => t.fromId === player.id && t.toId === toId);
+  if (duplicate) return reject('You already have a pending offer to this player');
+
+  const offerCash    = offer.cash        || 0;
+  const offerProps   = offer.properties  || [];
+  const offerPardons = offer.pardonCards || 0;
+  const reqCash      = request.cash        || 0;
+  const reqProps     = request.properties  || [];
+  const reqPardons   = request.pardonCards || 0;
+
+  if (offerCash    > player.cash)                return reject('Insufficient cash to offer');
+  if (offerPardons > (player.pardonCards || 0))  return reject('Insufficient Pardon cards to offer');
+  for (const idx of offerProps) {
+    if (state.ownership[idx]?.ownerId !== player.id) return reject(`You don't own property ${idx}`);
+  }
+  if (reqCash    > target.cash)                  return reject('Target has insufficient cash');
+  if (reqPardons > (target.pardonCards || 0))    return reject('Target has insufficient Pardon cards');
+  for (const idx of reqProps) {
+    if (state.ownership[idx]?.ownerId !== target.id) return reject(`Target doesn't own property ${idx}`);
+  }
+
+  const trade = {
+    id: randomUUID(),
+    fromId: player.id,
+    toId,
+    offer:   { cash: offerCash,  properties: offerProps,  pardonCards: offerPardons },
+    request: { cash: reqCash,    properties: reqProps,    pardonCards: reqPardons   },
+    message: message ? String(message).slice(0, 200) : null,
+    createdAt: Date.now(),
+  };
+  state.pendingTrades.push(trade);
+  state.log.push({ t: Date.now(), type: 'TRADE_OFFER', fromId: player.id, toId });
+  state.version += 1;
+  return { ok: true, state, payload: { tradeId: trade.id } };
+}
+
+function handleTradeAccept(state, player, tradeId) {
+  const trade = state.pendingTrades.find((t) => t.id === tradeId);
+  if (!trade)                    return reject('Trade not found');
+  if (trade.toId !== player.id)  return reject('Not your trade to accept');
+
+  const from = state.players.find((p) => p.id === trade.fromId);
+  if (!from || from.bankrupt)    return reject('Offering player is no longer active');
+
+  // Re-validate both sides at accept time
+  if (trade.offer.cash    > from.cash)                    return reject('Offerer no longer has enough cash');
+  if (trade.offer.pardonCards > (from.pardonCards || 0))  return reject('Offerer no longer has Pardon cards');
+  for (const idx of trade.offer.properties) {
+    if (state.ownership[idx]?.ownerId !== from.id) return reject('Offerer no longer owns an offered property');
+  }
+  if (trade.request.cash    > player.cash)                      return reject('You no longer have enough cash');
+  if (trade.request.pardonCards > (player.pardonCards || 0))    return reject('You no longer have Pardon cards');
+  for (const idx of trade.request.properties) {
+    if (state.ownership[idx]?.ownerId !== player.id) return reject('You no longer own a requested property');
+  }
+
+  // Execute: swap cash, properties, pardon cards
+  from.cash   -= trade.offer.cash;   player.cash += trade.offer.cash;
+  player.cash -= trade.request.cash; from.cash   += trade.request.cash;
+  for (const idx of trade.offer.properties)   state.ownership[idx] = { ...state.ownership[idx], ownerId: player.id };
+  for (const idx of trade.request.properties) state.ownership[idx] = { ...state.ownership[idx], ownerId: from.id };
+  from.pardonCards   = (from.pardonCards   || 0) - trade.offer.pardonCards + trade.request.pardonCards;
+  player.pardonCards = (player.pardonCards || 0) + trade.offer.pardonCards - trade.request.pardonCards;
+
+  state.pendingTrades = state.pendingTrades.filter((t) => t.id !== tradeId);
+  state.log.push({ t: Date.now(), type: 'TRADE_ACCEPT', fromId: trade.fromId, toId: player.id });
+  state.version += 1;
+  return { ok: true, state, payload: { traded: true } };
+}
+
+function handleTradeReject(state, player, tradeId) {
+  const trade = state.pendingTrades.find((t) => t.id === tradeId);
+  if (!trade)                    return reject('Trade not found');
+  if (trade.toId !== player.id)  return reject('Not your trade to reject');
+  state.pendingTrades = state.pendingTrades.filter((t) => t.id !== tradeId);
+  state.log.push({ t: Date.now(), type: 'TRADE_REJECT', fromId: trade.fromId, toId: player.id });
+  state.version += 1;
+  return { ok: true, state, payload: { rejected: true } };
+}
+
+function handleTradeCancel(state, player, tradeId) {
+  const trade = state.pendingTrades.find((t) => t.id === tradeId);
+  if (!trade)                      return reject('Trade not found');
+  if (trade.fromId !== player.id)  return reject('Not your trade to cancel');
+  state.pendingTrades = state.pendingTrades.filter((t) => t.id !== tradeId);
+  state.log.push({ t: Date.now(), type: 'TRADE_CANCEL', fromId: player.id });
+  state.version += 1;
+  return { ok: true, state, payload: { cancelled: true } };
+}
+
+// --- Property management handlers ---
+
+// Shared: look up house price for a space (falls back to formula if not in group config)
+function housePrice(space, map) {
+  const group = space.group ? map.groups?.[space.group] : null;
+  return group?.housePrice ?? Math.max(50, Math.round(space.price * 0.5 / 50) * 50);
+}
+
+function handleMortgage(state, player, action, map, rules) {
+  const space = map.spaces[action.spaceIndex];
+  if (!space || !['Property', 'Railroad', 'Utility'].includes(space.type)) return reject('Not a mortgageable space');
+  const ownership = state.ownership[action.spaceIndex];
+  if (!ownership || ownership.ownerId !== player.id) return reject('You do not own this property');
+  if (ownership.mortgaged) return reject('Already mortgaged');
+  if (ownership.houses > 0) return reject('Sell all houses before mortgaging');
+  const value = Math.floor(space.price * rules.mortgageRatio);
+  player.cash += value;
+  ownership.mortgaged = true;
+  state.log.push({ t: Date.now(), type: 'MORTGAGE', playerId: player.id, space: action.spaceIndex, amount: value });
+  state.version += 1;
+  return { ok: true, state, payload: { value } };
+}
+
+function handleUnmortgage(state, player, action, map, rules) {
+  const space = map.spaces[action.spaceIndex];
+  if (!space) return reject('Invalid space');
+  const ownership = state.ownership[action.spaceIndex];
+  if (!ownership || ownership.ownerId !== player.id) return reject('You do not own this property');
+  if (!ownership.mortgaged) return reject('Not mortgaged');
+  const cost = Math.floor(space.price * rules.unmortgageRatio);
+  if (player.cash < cost) return reject('Insufficient cash to unmortgage');
+  player.cash -= cost;
+  ownership.mortgaged = false;
+  state.log.push({ t: Date.now(), type: 'UNMORTGAGE', playerId: player.id, space: action.spaceIndex, amount: cost });
+  state.version += 1;
+  return { ok: true, state, payload: { cost } };
+}
+
+function handleBuildHouse(state, player, action, map, rules) {
+  const space = map.spaces[action.spaceIndex];
+  if (!space || space.type !== 'Property') return reject('Not a property');
+  const ownership = state.ownership[action.spaceIndex];
+  if (!ownership || ownership.ownerId !== player.id) return reject('You do not own this property');
+  if (ownership.mortgaged) return reject('Property is mortgaged');
+  const group = space.group ? map.groups?.[space.group] : null;
+  const maxHouses = group?.maxHouses ?? 4;
+  if (ownership.houses >= maxHouses) return reject('Maximum houses already built');
+  if (!isMonopolyOwned(state, player.id, map, space.group)) return reject('Must own the full colour group first');
+  const price = housePrice(space, map);
+  if (player.cash < price) return reject('Insufficient cash to build');
+  player.cash -= price;
+  ownership.houses += 1;
+  const isHotel = ownership.houses >= maxHouses;
+  state.log.push({ t: Date.now(), type: 'BUILD_HOUSE', playerId: player.id, space: action.spaceIndex, houses: ownership.houses, hotel: isHotel });
+  state.version += 1;
+  return { ok: true, state, payload: { houses: ownership.houses, hotel: isHotel } };
+}
+
+function handleSellHouse(state, player, action, map, rules) {
+  const space = map.spaces[action.spaceIndex];
+  if (!space) return reject('Invalid space');
+  const ownership = state.ownership[action.spaceIndex];
+  if (!ownership || ownership.ownerId !== player.id) return reject('You do not own this property');
+  if (ownership.houses <= 0) return reject('No houses to sell');
+  const price = housePrice(space, map);
+  const refund = Math.floor(price * 0.5);
+  player.cash += refund;
+  ownership.houses -= 1;
+  state.log.push({ t: Date.now(), type: 'SELL_HOUSE', playerId: player.id, space: action.spaceIndex, houses: ownership.houses, refund });
+  state.version += 1;
+  return { ok: true, state, payload: { houses: ownership.houses, refund } };
+}
+
+function handleBuy(state, player, map, rules) {
+  const space = map.spaces[player.position];
+  if (!space || !['Property', 'Railroad', 'Utility'].includes(space.type)) return reject('Not purchasable');
+  if (state.ownership[space.index]) return reject('Already owned');
+  if (player.cash < space.price) return reject('Insufficient cash');
+  player.cash -= space.price;
+  state.ownership[space.index] = { ownerId: player.id, mortgaged: false, houses: 0 };
+  state.log.push({ t: Date.now(), type: 'BUY', playerId: player.id, space: space.index });
+  state.version += 1;
+  return { ok: true, state, payload: { bought: space.index } };
+}
+
+function handleEndTurn(state, player, rules) {
+  state.log.push({ t: Date.now(), type: 'END_TURN', playerId: player.id });
+  advanceTurn(state, rules);
+  return accept(state, {});
+}
+
+// --- Space resolution ---
 
 function resolveSpace(state, player, space, rules, map) {
-  if (space.type === 'Tax') {
-    player.cash -= space.amount;
-    state.bank.vacationPot += space.amount;
+  switch (space.type) {
+    case 'Tax':
+      player.cash -= space.amount;
+      state.bank.vacationPot += space.amount;
+      break;
+    case 'TaxRefund':
+      player.cash += space.amount;
+      state.log.push({ t: Date.now(), type: 'TAX_REFUND', playerId: player.id, amount: space.amount });
+      break;
+    case 'FreeParking':
+      player.cash += state.bank.vacationPot;
+      state.bank.vacationPot = 0;
+      break;
+    case 'GoToJail':
+      player.position = rules.jailIndex;
+      player.inJail = true;
+      player.jailTurns = 0;
+      break;
+    case 'Chance':
+      applyCard(state, player, map, rules, 'chance');
+      break;
+    case 'CommunityChest':
+      applyCard(state, player, map, rules, 'community');
+      break;
+    case 'Property':
+    case 'Railroad':
+    case 'Utility':
+      resolveOwnable(state, player, space, rules, map);
+      break;
   }
-  if (space.type === 'FreeParking') {
-    player.cash += state.bank.vacationPot;
-    state.bank.vacationPot = 0;
+}
+
+function shuffleDeck(n) {
+  const deck = Array.from({ length: n }, (_, i) => i);
+  for (let i = n - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [deck[i], deck[j]] = [deck[j], deck[i]];
   }
-  if (space.type === 'GoToJail') {
-    const jail = state.players.length ? state.players : []; // no-op, retained for deterministic schema shape
-    void jail;
-    const jailIndex = 9;
-    player.position = jailIndex;
+  return deck;
+}
+
+function applyCard(state, player, map, rules, deck) {
+  const cards = deck === 'chance' ? CHANCE_CARDS : COMMUNITY_CHEST_CARDS;
+  const deckState = state.cardDecks[deck];
+  if (deckState.length === 0) {
+    // Deck exhausted — reshuffle
+    deckState.push(...shuffleDeck(cards.length));
+  }
+  const idx = deckState.shift();
+  const card = cards[idx];
+  state.log.push({ t: Date.now(), type: 'CARD', playerId: player.id, deck, desc: card.desc });
+
+  const { effect } = card;
+  if (effect.type === 'cash') {
+    player.cash += effect.amount;
+    if (effect.amount < 0) state.bank.vacationPot -= effect.amount;
+
+  } else if (effect.type === 'move') {
+    const oldPos = player.position;
+    player.position = effect.to;
+    if (effect.to < oldPos) {
+      player.cash += rules.goSalary;
+      state.log.push({ t: Date.now(), type: 'GO_SALARY', playerId: player.id, amount: rules.goSalary });
+    }
+    const space = map.spaces[player.position];
+    resolveSpace(state, player, space, rules, map);
+
+  } else if (effect.type === 'back') {
+    const newPos = (player.position - effect.amount + map.spaces.length) % map.spaces.length;
+    player.position = newPos;
+    const space = map.spaces[newPos];
+    resolveSpace(state, player, space, rules, map);
+
+  } else if (effect.type === 'jail') {
+    player.position = rules.jailIndex;
     player.inJail = true;
     player.jailTurns = 0;
-  }
-  if (['Property', 'Railroad', 'Utility'].includes(space.type)) {
-    const ownership = state.ownership[space.index];
-    if (ownership && ownership.ownerId !== player.id && !ownership.mortgaged) {
-      const owner = state.players.find((p) => p.id === ownership.ownerId);
-      if (!owner) return;
-      if (rules.jailBlocksRent && owner.inJail) return;
-      const baseRent = Array.isArray(space.rent) ? space.rent[0] : Math.max(10, Math.floor((space.price || 100) * 0.1));
-      const rent = isMonopolyOwned(state, owner.id, map, mapGroupOf(space)) && rules.doubleRentOnSet ? baseRent * 2 : baseRent;
-      player.cash -= rent;
-      owner.cash += rent;
+
+  } else if (effect.type === 'pardon') {
+    player.pardonCards = (player.pardonCards || 0) + 1;
+    state.log.push({ t: Date.now(), type: 'PARDON_RECEIVED', playerId: player.id });
+
+  } else if (effect.type === 'eachPlayer') {
+    // Positive amount = collect from each other; negative = pay each other
+    const others = state.players.filter((p) => !p.bankrupt && p.id !== player.id);
+    for (const other of others) {
+      player.cash += effect.amount;
+      other.cash -= effect.amount;
+    }
+    state.log.push({ t: Date.now(), type: 'EACH_PLAYER', playerId: player.id, amount: effect.amount });
+
+  } else if (effect.type === 'renovation') {
+    let total = 0;
+    for (const [idx, ownership] of Object.entries(state.ownership)) {
+      if (ownership.ownerId !== player.id) continue;
+      const space = map.spaces[Number(idx)];
+      const group = space && space.group ? map.groups?.[space.group] : null;
+      const maxHouses = group?.maxHouses ?? 4;
+      if (ownership.houses >= maxHouses) {
+        total += effect.hotelCost;  // max houses = hotel
+      } else {
+        total += ownership.houses * effect.houseCost;
+      }
+    }
+    player.cash -= total;
+    if (total > 0) state.bank.vacationPot += total;
+    state.log.push({ t: Date.now(), type: 'RENOVATION', playerId: player.id, amount: total });
+
+  } else if (effect.type === 'nearestRailroad') {
+    const pos = player.position;
+    const railroads = map.spaces
+      .filter((s) => s.type === 'Railroad')
+      .map((s) => s.index)
+      .sort((a, b) => a - b);
+    if (railroads.length > 0) {
+      const next = railroads.find((r) => r > pos) ?? railroads[0];
+      if (next <= pos) {
+        player.cash += rules.goSalary;
+        state.log.push({ t: Date.now(), type: 'GO_SALARY', playerId: player.id, amount: rules.goSalary });
+      }
+      player.position = next;
+      resolveSpace(state, player, map.spaces[next], rules, map);
+    }
+
+  } else if (effect.type === 'nearestUtility') {
+    const pos = player.position;
+    const utilities = map.spaces
+      .filter((s) => s.type === 'Utility')
+      .map((s) => s.index)
+      .sort((a, b) => a - b);
+    if (utilities.length > 0) {
+      const next = utilities.find((u) => u > pos) ?? utilities[0];
+      if (next <= pos) {
+        player.cash += rules.goSalary;
+        state.log.push({ t: Date.now(), type: 'GO_SALARY', playerId: player.id, amount: rules.goSalary });
+      }
+      player.position = next;
+      resolveSpace(state, player, map.spaces[next], rules, map);
+    }
+
+  } else if (effect.type === 'randomCity') {
+    const properties = map.spaces.filter((s) => s.type === 'Property');
+    if (properties.length > 0) {
+      const target = properties[Math.floor(Math.random() * properties.length)];
+      const oldPos = player.position;
+      player.position = target.index;
+      if (target.index < oldPos) {
+        player.cash += rules.goSalary;
+        state.log.push({ t: Date.now(), type: 'GO_SALARY', playerId: player.id, amount: rules.goSalary });
+      }
+      state.log.push({ t: Date.now(), type: 'RANDOM_CITY', playerId: player.id, landed: target.name });
+      resolveSpace(state, player, target, rules, map);
     }
   }
 }
 
-function mapGroupOf(space) {
-  return space.group || `${space.type}`;
+function resolveOwnable(state, player, space, rules, map) {
+  const ownership = state.ownership[space.index];
+  if (!ownership || ownership.ownerId === player.id || ownership.mortgaged) return;
+  const owner = state.players.find((p) => p.id === ownership.ownerId);
+  if (!owner) return;
+  if (rules.jailBlocksRent && owner.inJail) return;
+
+  let rent;
+  if (space.type === 'Railroad') {
+    const ownedRailroads = Object.entries(state.ownership)
+      .filter(([, o]) => o.ownerId === owner.id)
+      .map(([idx]) => map.spaces[Number(idx)])
+      .filter((s) => s?.type === 'Railroad').length;
+    rent = space.rent[Math.min(ownedRailroads - 1, space.rent.length - 1)];
+  } else if (space.type === 'Utility') {
+    const ownedUtils = Object.entries(state.ownership)
+      .filter(([, o]) => o.ownerId === owner.id)
+      .map(([idx]) => map.spaces[Number(idx)])
+      .filter((s) => s?.type === 'Utility').length;
+    // Use a fresh dice roll for utility rent; multiplier scales with how many companies owner holds
+    const dice = rollDice();
+    const multiplier = ownedUtils >= 3 ? rules.utilityDiceMultiplierThree
+                     : ownedUtils >= 2 ? rules.utilityDiceMultiplierBoth
+                     : rules.utilityDiceMultiplierOne;
+    rent = dice.total * multiplier;
+    state.log.push({ t: Date.now(), type: 'UTILITY_ROLL', playerId: player.id, d1: dice.d1, d2: dice.d2 });
+  } else {
+    const baseRent = Array.isArray(space.rent) ? space.rent[ownership.houses] : Math.max(10, Math.floor((space.price || 100) * 0.1));
+    const monopoly = isMonopolyOwned(state, owner.id, map, space.group);
+    rent = (ownership.houses === 0 && monopoly && rules.doubleRentOnSet) ? baseRent * 2 : baseRent;
+  }
+
+  player.cash -= rent;
+  owner.cash += rent;
+  state.log.push({ t: Date.now(), type: 'RENT', playerId: player.id, ownerId: owner.id, space: space.index, amount: rent });
 }
+
+// --- Bankruptcy & win ---
+
+function checkBankruptcy(state, player, map) {
+  if (player.cash >= 0) return;
+  player.bankrupt = true;
+  player.cash = 0;
+  // Forfeit all owned properties back to the bank
+  for (const [idx, ownership] of Object.entries(state.ownership)) {
+    if (ownership.ownerId === player.id) delete state.ownership[idx];
+  }
+  state.log.push({ t: Date.now(), type: 'BANKRUPT', playerId: player.id });
+}
+
+function checkWin(state) {
+  const active = state.players.filter((p) => !p.bankrupt);
+  if (active.length === 1) {
+    state.status = 'finished';
+    state.winner = active[0].id;
+    state.log.push({ t: Date.now(), type: 'GAME_OVER', winnerId: active[0].id });
+  }
+}
+
+// --- Helpers ---
 
 function isMonopolyOwned(state, ownerId, map, group) {
   const groupSpaces = map.spaces.filter((s) => s.group === group).map((s) => String(s.index));
@@ -80,14 +592,19 @@ function isMonopolyOwned(state, ownerId, map, group) {
 }
 
 function advanceTurn(state, rules) {
-  state.turn.index = (state.turn.index + 1) % state.players.length;
+  // Skip bankrupt players
+  let next = (state.turn.index + 1) % state.players.length;
+  let safety = 0;
+  while (state.players[next].bankrupt && safety++ < state.players.length) {
+    next = (next + 1) % state.players.length;
+  }
+  state.turn.index = next;
   state.turn.startedAt = Date.now();
   state.turn.deadlineAt = Date.now() + rules.turnTimeSec * 1000;
   state.version += 1;
 }
 
 function accept(state, payload) {
-  state.version += 1;
   return { ok: true, state, payload };
 }
 
@@ -100,6 +617,8 @@ export function applyTimeout(state, rules) {
   player.timeoutCount += 1;
   player.cash -= player.timeoutCount * rules.timeoutPenaltyStep;
   state.log.push({ t: Date.now(), type: 'TIMEOUT', playerId: player.id, count: player.timeoutCount });
+  checkBankruptcy(state, player);
+  checkWin(state);
   advanceTurn(state, rules);
   return state;
 }
