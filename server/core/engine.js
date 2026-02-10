@@ -68,9 +68,9 @@ export function applyAction(state, action, map, rules, actorId) {
     if (!player) return reject('Invalid player');
     switch (action.type) {
       case 'TRADE_OFFER':  return handleTradeOffer(state, player, action);
-      case 'TRADE_ACCEPT': return handleTradeAccept(state, player);
-      case 'TRADE_REJECT': return handleTradeReject(state, player);
-      case 'TRADE_CANCEL': return handleTradeCancel(state, player);
+      case 'TRADE_ACCEPT': return handleTradeAccept(state, player, action.tradeId);
+      case 'TRADE_REJECT': return handleTradeReject(state, player, action.tradeId);
+      case 'TRADE_CANCEL': return handleTradeCancel(state, player, action.tradeId);
     }
   }
 
@@ -174,97 +174,97 @@ function handleUsePardon(state, player, map, rules) {
 // --- Trade handlers ---
 
 function handleTradeOffer(state, player, action) {
-  if (state.pendingTrade) return reject('A trade offer is already pending');
   const { toId, offer = {}, request = {}, message } = action;
   if (!toId || toId === player.id) return reject('Invalid trade target');
   const target = state.players.find((p) => p.id === toId && !p.bankrupt);
   if (!target) return reject('Target player not found or bankrupt');
 
-  const offerCash      = offer.cash      || 0;
-  const offerProps     = offer.properties || [];
-  const offerPardons   = offer.pardonCards || 0;
-  const requestCash    = request.cash      || 0;
-  const requestProps   = request.properties || [];
-  const requestPardons = request.pardonCards || 0;
+  // Each player may have at most one outgoing offer per recipient at a time
+  const duplicate = state.pendingTrades.find((t) => t.fromId === player.id && t.toId === toId);
+  if (duplicate) return reject('You already have a pending offer to this player');
 
-  if (offerCash > player.cash)       return reject('Insufficient cash to offer');
-  if (offerPardons > (player.pardonCards || 0)) return reject('Insufficient Pardon cards to offer');
+  const offerCash    = offer.cash        || 0;
+  const offerProps   = offer.properties  || [];
+  const offerPardons = offer.pardonCards || 0;
+  const reqCash      = request.cash        || 0;
+  const reqProps     = request.properties  || [];
+  const reqPardons   = request.pardonCards || 0;
+
+  if (offerCash    > player.cash)                return reject('Insufficient cash to offer');
+  if (offerPardons > (player.pardonCards || 0))  return reject('Insufficient Pardon cards to offer');
   for (const idx of offerProps) {
     if (state.ownership[idx]?.ownerId !== player.id) return reject(`You don't own property ${idx}`);
   }
-  if (requestCash > target.cash)     return reject('Target has insufficient cash');
-  if (requestPardons > (target.pardonCards || 0)) return reject('Target has insufficient Pardon cards');
-  for (const idx of requestProps) {
+  if (reqCash    > target.cash)                  return reject('Target has insufficient cash');
+  if (reqPardons > (target.pardonCards || 0))    return reject('Target has insufficient Pardon cards');
+  for (const idx of reqProps) {
     if (state.ownership[idx]?.ownerId !== target.id) return reject(`Target doesn't own property ${idx}`);
   }
 
-  state.pendingTrade = {
+  const trade = {
     id: randomUUID(),
     fromId: player.id,
     toId,
-    offer:   { cash: offerCash,   properties: offerProps,   pardonCards: offerPardons },
-    request: { cash: requestCash, properties: requestProps, pardonCards: requestPardons },
+    offer:   { cash: offerCash,  properties: offerProps,  pardonCards: offerPardons },
+    request: { cash: reqCash,    properties: reqProps,    pardonCards: reqPardons   },
     message: message ? String(message).slice(0, 200) : null,
     createdAt: Date.now(),
   };
+  state.pendingTrades.push(trade);
   state.log.push({ t: Date.now(), type: 'TRADE_OFFER', fromId: player.id, toId });
   state.version += 1;
-  return { ok: true, state, payload: { tradeId: state.pendingTrade.id } };
+  return { ok: true, state, payload: { tradeId: trade.id } };
 }
 
-function handleTradeAccept(state, player) {
-  const trade = state.pendingTrade;
-  if (!trade)                  return reject('No pending trade');
-  if (trade.toId !== player.id) return reject('Not your trade to accept');
+function handleTradeAccept(state, player, tradeId) {
+  const trade = state.pendingTrades.find((t) => t.id === tradeId);
+  if (!trade)                    return reject('Trade not found');
+  if (trade.toId !== player.id)  return reject('Not your trade to accept');
 
   const from = state.players.find((p) => p.id === trade.fromId);
-  if (!from || from.bankrupt)  return reject('Offering player is no longer active');
+  if (!from || from.bankrupt)    return reject('Offering player is no longer active');
 
-  // Re-validate both sides at accept time (state may have changed)
-  if (trade.offer.cash   > from.cash)                   return reject('Offerer no longer has enough cash');
-  if (trade.offer.pardonCards > (from.pardonCards || 0)) return reject('Offerer no longer has Pardon cards');
+  // Re-validate both sides at accept time
+  if (trade.offer.cash    > from.cash)                    return reject('Offerer no longer has enough cash');
+  if (trade.offer.pardonCards > (from.pardonCards || 0))  return reject('Offerer no longer has Pardon cards');
   for (const idx of trade.offer.properties) {
     if (state.ownership[idx]?.ownerId !== from.id) return reject('Offerer no longer owns an offered property');
   }
-  if (trade.request.cash   > player.cash)                     return reject('You no longer have enough cash');
-  if (trade.request.pardonCards > (player.pardonCards || 0))   return reject('You no longer have Pardon cards');
+  if (trade.request.cash    > player.cash)                      return reject('You no longer have enough cash');
+  if (trade.request.pardonCards > (player.pardonCards || 0))    return reject('You no longer have Pardon cards');
   for (const idx of trade.request.properties) {
     if (state.ownership[idx]?.ownerId !== player.id) return reject('You no longer own a requested property');
   }
 
-  // Execute: swap cash
+  // Execute: swap cash, properties, pardon cards
   from.cash   -= trade.offer.cash;   player.cash += trade.offer.cash;
   player.cash -= trade.request.cash; from.cash   += trade.request.cash;
-
-  // Swap properties
   for (const idx of trade.offer.properties)   state.ownership[idx] = { ...state.ownership[idx], ownerId: player.id };
   for (const idx of trade.request.properties) state.ownership[idx] = { ...state.ownership[idx], ownerId: from.id };
+  from.pardonCards   = (from.pardonCards   || 0) - trade.offer.pardonCards + trade.request.pardonCards;
+  player.pardonCards = (player.pardonCards || 0) + trade.offer.pardonCards - trade.request.pardonCards;
 
-  // Swap pardon cards
-  from.pardonCards   = (from.pardonCards   || 0) - trade.offer.pardonCards   + trade.request.pardonCards;
-  player.pardonCards = (player.pardonCards || 0) + trade.offer.pardonCards   - trade.request.pardonCards;
-
-  state.pendingTrade = null;
+  state.pendingTrades = state.pendingTrades.filter((t) => t.id !== tradeId);
   state.log.push({ t: Date.now(), type: 'TRADE_ACCEPT', fromId: trade.fromId, toId: player.id });
   state.version += 1;
   return { ok: true, state, payload: { traded: true } };
 }
 
-function handleTradeReject(state, player) {
-  const trade = state.pendingTrade;
-  if (!trade)                  return reject('No pending trade');
-  if (trade.toId !== player.id) return reject('Not your trade to reject');
-  state.pendingTrade = null;
+function handleTradeReject(state, player, tradeId) {
+  const trade = state.pendingTrades.find((t) => t.id === tradeId);
+  if (!trade)                    return reject('Trade not found');
+  if (trade.toId !== player.id)  return reject('Not your trade to reject');
+  state.pendingTrades = state.pendingTrades.filter((t) => t.id !== tradeId);
   state.log.push({ t: Date.now(), type: 'TRADE_REJECT', fromId: trade.fromId, toId: player.id });
   state.version += 1;
   return { ok: true, state, payload: { rejected: true } };
 }
 
-function handleTradeCancel(state, player) {
-  const trade = state.pendingTrade;
-  if (!trade)                    return reject('No pending trade');
-  if (trade.fromId !== player.id) return reject('Not your trade to cancel');
-  state.pendingTrade = null;
+function handleTradeCancel(state, player, tradeId) {
+  const trade = state.pendingTrades.find((t) => t.id === tradeId);
+  if (!trade)                      return reject('Trade not found');
+  if (trade.fromId !== player.id)  return reject('Not your trade to cancel');
+  state.pendingTrades = state.pendingTrades.filter((t) => t.id !== tradeId);
   state.log.push({ t: Date.now(), type: 'TRADE_CANCEL', fromId: player.id });
   state.version += 1;
   return { ok: true, state, payload: { cancelled: true } };

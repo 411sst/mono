@@ -146,74 +146,82 @@ function renderGameOver() {
 
 // --- Trade ---
 
+function tradeCardHtml(trade) {
+  const from = state.players.find((p) => p.id === trade.fromId);
+  const to   = state.players.find((p) => p.id === trade.toId);
+  const offerProps   = trade.offer.properties.map((i) => map?.spaces[i]?.name   || `#${i}`).join(', ') || '—';
+  const requestProps = trade.request.properties.map((i) => map?.spaces[i]?.name || `#${i}`).join(', ') || '—';
+  const isMeRecipient = myPlayerId && trade.toId   === myPlayerId;
+  const isMeOfferer   = myPlayerId && trade.fromId === myPlayerId;
+  const buttons = [
+    isMeRecipient ? `<button class="trade-accept-btn" data-id="${trade.id}">Accept</button>` : '',
+    isMeRecipient ? `<button class="trade-reject-btn" data-id="${trade.id}">Reject</button>` : '',
+    isMeOfferer   ? `<button class="trade-cancel-btn" data-id="${trade.id}">Cancel</button>` : '',
+  ].join('');
+  return `
+    <div class="pending-trade-card" data-id="${trade.id}">
+      <div class="trade-header"><strong>${from?.name}</strong> → <strong>${to?.name}</strong>
+        ${trade.message ? `<em class="trade-msg">"${escHtml(trade.message)}"</em>` : ''}
+      </div>
+      <div class="trade-cols">
+        <div class="trade-section">
+          <strong>${from?.name} offers</strong>
+          <div>💵 $${trade.offer.cash}</div>
+          <div>🏠 ${offerProps}</div>
+          ${trade.offer.pardonCards ? `<div>🃏 ${trade.offer.pardonCards} pardon(s)</div>` : ''}
+        </div>
+        <div class="trade-section">
+          <strong>${from?.name} wants</strong>
+          <div>💵 $${trade.request.cash}</div>
+          <div>🏠 ${requestProps}</div>
+          ${trade.request.pardonCards ? `<div>🃏 ${trade.request.pardonCards} pardon(s)</div>` : ''}
+        </div>
+      </div>
+      ${buttons ? `<div class="pending-trade-actions">${buttons}</div>` : ''}
+    </div>`;
+}
+
 function renderTrade() {
   if (!state) return;
-  const me = state.players.find((p) => p.id === myPlayerId);
-  const trade = state.pendingTrade;
 
-  if (trade) {
-    // Show pending trade, hide new-offer form
-    el('pendingTrade').hidden = false;
-    el('newTradeForm').hidden = true;
+  // Pending trades list
+  const trades = state.pendingTrades || [];
+  const myTrades = trades.filter((t) => t.fromId === myPlayerId || t.toId === myPlayerId);
+  el('pendingTrade').hidden = myTrades.length === 0;
+  el('pendingTradeDetails').innerHTML = myTrades.map(tradeCardHtml).join('');
 
-    const from = state.players.find((p) => p.id === trade.fromId);
-    const to   = state.players.find((p) => p.id === trade.toId);
-    const offerProps   = trade.offer.properties.map((i) => map?.spaces[i]?.name || `#${i}`).join(', ') || '—';
-    const requestProps = trade.request.properties.map((i) => map?.spaces[i]?.name || `#${i}`).join(', ') || '—';
+  // Wire up inline buttons (replaces static tradeAcceptBtn etc.)
+  el('pendingTradeDetails').querySelectorAll('.trade-accept-btn').forEach((btn) =>
+    btn.addEventListener('click', () => sendTradeAction('TRADE_ACCEPT', { tradeId: btn.dataset.id })));
+  el('pendingTradeDetails').querySelectorAll('.trade-reject-btn').forEach((btn) =>
+    btn.addEventListener('click', () => sendTradeAction('TRADE_REJECT', { tradeId: btn.dataset.id })));
+  el('pendingTradeDetails').querySelectorAll('.trade-cancel-btn').forEach((btn) =>
+    btn.addEventListener('click', () => sendTradeAction('TRADE_CANCEL', { tradeId: btn.dataset.id })));
 
-    el('pendingTradeDetails').innerHTML = `
-      <div class="trade-detail">
-        <strong>${from?.name}</strong> → <strong>${to?.name}</strong>
-        ${trade.message ? `<em class="trade-msg">"${trade.message}"</em>` : ''}
-        <div class="trade-cols">
-          <div class="trade-section">
-            <strong>${from?.name} offers</strong>
-            <div>💵 $${trade.offer.cash}</div>
-            <div>🏠 ${offerProps}</div>
-            ${trade.offer.pardonCards ? `<div>🃏 ${trade.offer.pardonCards} Pardon card(s)</div>` : ''}
-          </div>
-          <div class="trade-section">
-            <strong>${from?.name} wants</strong>
-            <div>💵 $${trade.request.cash}</div>
-            <div>🏠 ${requestProps}</div>
-            ${trade.request.pardonCards ? `<div>🃏 ${trade.request.pardonCards} Pardon card(s)</div>` : ''}
-          </div>
-        </div>
-      </div>`;
+  // Always show the new-offer form
+  el('newTradeForm').hidden = false;
 
-    const isMeRecipient = me && trade.toId === me.id;
-    const isMeOfferer   = me && trade.fromId === me.id;
-    el('tradeAcceptBtn').hidden = !isMeRecipient;
-    el('tradeRejectBtn').hidden = !isMeRecipient;
-    el('tradeCancelBtn').hidden = !isMeOfferer;
-  } else {
-    // Show new-offer form
-    el('pendingTrade').hidden = true;
-    el('newTradeForm').hidden = false;
+  // Populate target selector
+  const targetSel = el('tradeTarget');
+  const prevTarget = targetSel.value;
+  targetSel.innerHTML = '';
+  state.players.filter((p) => !p.bankrupt && p.id !== myPlayerId).forEach((p) => {
+    const opt = document.createElement('option');
+    opt.value = p.id;
+    opt.textContent = p.name;
+    targetSel.appendChild(opt);
+  });
+  if (prevTarget) targetSel.value = prevTarget;
 
-    // Populate target selector with other non-bankrupt players
-    const targetSel = el('tradeTarget');
-    const prevTarget = targetSel.value;
-    targetSel.innerHTML = '';
-    state.players.filter((p) => !p.bankrupt && p.id !== myPlayerId).forEach((p) => {
-      const opt = document.createElement('option');
-      opt.value = p.id;
-      opt.textContent = p.name;
-      targetSel.appendChild(opt);
-    });
-    if (prevTarget) targetSel.value = prevTarget;
+  // My properties (offer side)
+  const myProps = Object.entries(state.ownership || {})
+    .filter(([, o]) => o.ownerId === myPlayerId)
+    .map(([idx]) => ({ idx: Number(idx), name: map?.spaces[Number(idx)]?.name || `#${idx}` }));
+  el('tradePropsOffer').innerHTML = myProps.map((p) =>
+    `<label><input type="checkbox" class="prop-offer" value="${p.idx}"> ${p.name}</label>`
+  ).join('');
 
-    // Populate my properties (offer side)
-    const myProps = Object.entries(state.ownership || {})
-      .filter(([, o]) => o.ownerId === myPlayerId)
-      .map(([idx]) => ({ idx: Number(idx), name: map?.spaces[Number(idx)]?.name || `#${idx}` }));
-    el('tradePropsOffer').innerHTML = myProps.map((p) =>
-      `<label><input type="checkbox" class="prop-offer" value="${p.idx}"> ${p.name}</label>`
-    ).join('');
-
-    // Populate target's properties (request side) — update on target change
-    populateRequestProps();
-  }
+  populateRequestProps();
 }
 
 function populateRequestProps() {
@@ -246,9 +254,7 @@ el('tradeOfferBtn').onclick = () => {
   });
 };
 
-el('tradeAcceptBtn').onclick = () => sendTradeAction('TRADE_ACCEPT');
-el('tradeRejectBtn').onclick = () => sendTradeAction('TRADE_REJECT');
-el('tradeCancelBtn').onclick = () => sendTradeAction('TRADE_CANCEL');
+// Accept / Reject / Cancel buttons are created dynamically per trade in renderTrade()
 
 async function sendTradeAction(type, extra = {}) {
   if (!activeSession) return;

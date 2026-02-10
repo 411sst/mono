@@ -38,14 +38,9 @@
       <div id="tradePanel" class="trade-panel">
         <h2>Trade</h2>
 
-        <!-- Pending trade — shown when state.pendingTrade exists -->
-        <div id="pendingTrade" hidden class="pending-trade">
+        <!-- Pending trades — shown when state.pendingTrades has entries for this player -->
+        <div id="pendingTrade" hidden>
           <div id="pendingTradeDetails"></div>
-          <div class="pending-trade-actions">
-            <button id="tradeAcceptBtn" hidden>Accept Trade</button>
-            <button id="tradeRejectBtn" hidden>Reject Trade</button>
-            <button id="tradeCancelBtn" hidden>Cancel Trade</button>
-          </div>
         </div>
 
         <!-- New trade form — shown when no pending trade -->

@@ -119,17 +119,18 @@ button:hover:not(:disabled) { background: #2563eb; }
 #tradeMessage { width: 100%; margin: 8px 0; }
 #tradeOfferBtn { margin-top: 4px; }
 
-/* Pending trade */
-.pending-trade { background: #111827; border-radius: 8px; padding: 12px; margin-bottom: 10px; }
-.trade-detail { font-size: 0.9rem; display: flex; flex-direction: column; gap: 6px; }
-.trade-msg { color: #9ca3af; font-size: 0.85rem; }
-.pending-trade-actions { display: flex; gap: 8px; margin-top: 10px; }
-#tradeAcceptBtn { background: #059669; }
-#tradeAcceptBtn:hover { background: #047857; }
-#tradeRejectBtn { background: #dc2626; }
-#tradeRejectBtn:hover { background: #b91c1c; }
-#tradeCancelBtn { background: #78350f; }
-#tradeCancelBtn:hover { background: #92400e; }
+/* Pending trade cards (multiple) */
+#pendingTrade { display: flex; flex-direction: column; gap: 10px; margin-bottom: 14px; }
+.pending-trade-card { background: #111827; border-radius: 8px; padding: 12px; border: 1px solid #374151; }
+.trade-header { font-size: 0.9rem; margin-bottom: 8px; display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.trade-msg { color: #9ca3af; font-size: 0.82rem; font-style: italic; }
+.pending-trade-actions { display: flex; gap: 8px; margin-top: 10px; flex-wrap: wrap; }
+.trade-accept-btn { background: #059669; }
+.trade-accept-btn:hover { background: #047857; }
+.trade-reject-btn { background: #dc2626; }
+.trade-reject-btn:hover { background: #b91c1c; }
+.trade-cancel-btn { background: #78350f; }
+.trade-cancel-btn:hover { background: #92400e; }
 
 /* Chat panel */
 .chat-messages { height: 180px; overflow-y: auto; background: #111827; border-radius: 8px; padding: 8px; margin-bottom: 10px; display: flex; flex-direction: column; gap: 4px; }

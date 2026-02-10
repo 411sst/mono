@@ -37,7 +37,7 @@ export function createInitialState({ map, rules, players }) {
     ownership: {},
     bank: { vacationPot: 0 },
     cardDecks: { chance: shuffleDeck(17), community: shuffleDeck(17) },
-    pendingTrade: null,
+    pendingTrades: [],
     chat: [],
     log: []
   };
