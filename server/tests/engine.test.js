@@ -31,6 +31,8 @@ test('state has winner and status fields', () => {
 
 test('timeout applies progressive penalty', () => {
   const state = makeState();
+  // Pin to player 0 so the test is deterministic regardless of random first player
+  state.turn.index = 0;
   const before = state.players[0].cash;
   applyTimeout(state, richupPreset);
   assert.equal(state.players[0].cash, before - 50);
@@ -52,8 +54,9 @@ test('each action increments version by exactly 1', () => {
 
 test('BUY increments version by 1', () => {
   const state = makeState();
-  // Place player on a purchasable property
-  state.players[0].position = 1;
+  // Place the current player on a purchasable property
+  const player = state.players[state.turn.index];
+  player.position = 1;
   const v0 = state.version;
   const r = applyAction(state, { type: 'BUY' }, map, richupPreset);
   assert.equal(r.ok, true);
@@ -69,13 +72,15 @@ test('PAY_JAIL fails when not in jail', () => {
 
 test('PAY_JAIL deducts fine and clears jail status', () => {
   const state = makeState();
-  state.players[0].inJail = true;
-  state.players[0].jailTurns = 1;
-  const before = state.players[0].cash;
+  // Apply to whichever player is current (first player is random)
+  const player = state.players[state.turn.index];
+  player.inJail = true;
+  player.jailTurns = 1;
+  const before = player.cash;
   const r = applyAction(state, { type: 'PAY_JAIL' }, map, richupPreset);
   assert.equal(r.ok, true);
-  assert.equal(state.players[0].inJail, false);
-  assert.equal(state.players[0].cash, before - richupPreset.jailFine);
+  assert.equal(player.inJail, false);
+  assert.equal(player.cash, before - richupPreset.jailFine);
 });
 
 test('player goes bankrupt when cash goes negative', () => {

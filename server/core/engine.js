@@ -173,10 +173,23 @@ function resolveSpace(state, player, space, rules, map) {
   }
 }
 
+function shuffleDeck(n) {
+  const deck = Array.from({ length: n }, (_, i) => i);
+  for (let i = n - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [deck[i], deck[j]] = [deck[j], deck[i]];
+  }
+  return deck;
+}
+
 function applyCard(state, player, map, rules, deck) {
   const cards = deck === 'chance' ? CHANCE_CARDS : COMMUNITY_CHEST_CARDS;
-  const idx = state.cardIndex[deck] % cards.length;
-  state.cardIndex[deck] = (idx + 1) % cards.length;
+  const deckState = state.cardDecks[deck];
+  if (deckState.length === 0) {
+    // Deck exhausted — reshuffle
+    deckState.push(...shuffleDeck(cards.length));
+  }
+  const idx = deckState.shift();
   const card = cards[idx];
   state.log.push({ t: Date.now(), type: 'CARD', playerId: player.id, deck, desc: card.desc });
 

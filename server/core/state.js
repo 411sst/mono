@@ -1,5 +1,14 @@
 import { randomUUID } from 'node:crypto';
 
+function shuffleDeck(n) {
+  const deck = Array.from({ length: n }, (_, i) => i);
+  for (let i = n - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [deck[i], deck[j]] = [deck[j], deck[i]];
+  }
+  return deck;
+}
+
 // players: array of { id, name }
 export function createInitialState({ map, rules, players }) {
   const entities = players.map(({ id, name }) => ({
@@ -13,6 +22,7 @@ export function createInitialState({ map, rules, players }) {
     connected: true,
     bankrupt: false
   }));
+  const firstPlayer = Math.floor(Math.random() * players.length);
   return {
     id: randomUUID(),
     createdAt: Date.now(),
@@ -21,11 +31,11 @@ export function createInitialState({ map, rules, players }) {
     mapId: map.id,
     rulesId: rules.id,
     version: 1,
-    turn: { index: 0, startedAt: Date.now(), deadlineAt: Date.now() + rules.turnTimeSec * 1000 },
+    turn: { index: firstPlayer, startedAt: Date.now(), deadlineAt: Date.now() + rules.turnTimeSec * 1000 },
     players: entities,
     ownership: {},
     bank: { vacationPot: 0 },
-    cardIndex: { chance: 0, community: 0 },
+    cardDecks: { chance: shuffleDeck(8), community: shuffleDeck(8) },
     log: []
   };
 }
