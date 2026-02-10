@@ -1,0 +1,10 @@
+body { font-family: system-ui, sans-serif; background: #111827; color: #e5e7eb; margin: 0; }
+main { max-width: 980px; margin: 0 auto; padding: 20px; display: grid; gap: 16px; }
+.panel { background: #1f2937; border-radius: 12px; padding: 16px; }
+#board { display: grid; grid-template-columns: repeat(4,1fr); gap: 8px; }
+.space { border: 1px solid #374151; border-radius: 8px; padding: 8px; min-height: 54px; font-size: 12px; }
+.space.owned { border-color: #f59e0b; }
+.actions { display: flex; gap: 8px; margin-top: 10px; }
+button { background: #3b82f6; color: white; border: 0; border-radius: 8px; padding: 8px 10px; }
+input { padding: 8px; border-radius: 8px; border: 1px solid #4b5563; background: #111827; color: #f3f4f6; }
+@media (max-width: 700px) { #board { grid-template-columns: repeat(2,1fr); } }
