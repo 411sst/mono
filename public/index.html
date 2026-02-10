@@ -7,41 +7,60 @@
   <link rel="stylesheet" href="/styles.css" />
 </head>
 <body>
-  <main>
-    <header class="site-header">
-      <span class="cat-icon">🐱</span>
-      <h1>Meownopoly</h1>
-    </header>
 
-    <section class="panel">
-      <h2>Join a Game</h2>
+<!-- LOBBY -->
+<div id="lobby">
+  <div class="lobby-inner">
+    <div class="lobby-logo">🐱 Meownopoly</div>
+    <div class="l-panel">
+      <div class="l-label">JOIN A GAME</div>
       <div class="queue-row">
         <input id="name" placeholder="Your name" autocomplete="off" />
         <select id="mapSelect"></select>
         <button id="queueBtn">Join Queue</button>
       </div>
       <div id="queueStatus"></div>
-    </section>
-
-    <section class="panel">
-      <h2>Sessions</h2>
+    </div>
+    <div class="l-panel">
+      <div class="l-label">SESSIONS</div>
       <ul id="sessions"></ul>
-    </section>
+    </div>
+  </div>
+</div>
 
-    <section class="panel" id="gamePanel" hidden>
-      <div id="gameOver" class="game-over" hidden></div>
+<!-- GAME -->
+<div id="gameRoot" hidden>
+  <div id="gameOver" class="game-over-banner" hidden></div>
+  <div class="game-layout">
 
-      <!-- Player dashboard -->
+    <!-- LEFT: Chat -->
+    <aside class="sidebar sidebar-left">
+      <div class="sb-title">CHAT</div>
+      <div id="chatMessages" class="chat-messages"></div>
+      <div class="chat-input-row">
+        <input id="chatInput" placeholder="Say something…" maxlength="300" autocomplete="off" />
+        <button id="chatSendBtn">→</button>
+      </div>
+      <div class="sb-title" style="margin-top:16px">EVENTS</div>
+      <div id="eventLog" class="event-log"></div>
+    </aside>
+
+    <!-- CENTER: Ring Board -->
+    <div class="board-wrap">
+      <div id="board" class="ring-board">
+        <div class="board-center" id="boardCenter">
+          <div class="board-logo">🐱<br>Meownopoly</div>
+          <div id="diceRow" class="dice-row"></div>
+          <div id="lastEvent" class="last-event-center"></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- RIGHT: Players + Actions + Props + Trade -->
+    <aside class="sidebar sidebar-right">
       <div id="dash"></div>
 
-      <!-- Last event ticker -->
-      <div id="lastEvent" class="last-event"></div>
-
-      <!-- Dice display -->
-      <div class="dice-row" id="diceRow"></div>
-
-      <!-- Action buttons -->
-      <div class="actions">
+      <div class="actions" id="actionBar">
         <button id="rollBtn" disabled>🎲 Roll</button>
         <button id="buyBtn" disabled>🏠 Buy</button>
         <button id="payJailBtn" hidden>⛓ Pay Jail ($50)</button>
@@ -49,63 +68,42 @@
         <button id="endBtn" disabled>✓ End Turn</button>
       </div>
 
-      <!-- Property management (your turn only) -->
-      <div id="propPanel" class="prop-panel" hidden>
-        <h2>Your Properties</h2>
+      <div id="propPanel" hidden>
+        <div class="sb-title">MY PROPERTIES</div>
         <div id="propList"></div>
       </div>
 
-      <!-- Trade + Chat side by side -->
-      <div class="game-side-layout">
-        <!-- Trade panel -->
-        <div id="tradePanel" class="trade-panel">
-          <h2>Trade</h2>
-
-          <!-- Pending trades -->
-          <div id="pendingTrade" hidden>
-            <div id="pendingTradeDetails"></div>
-          </div>
-
-          <!-- New trade form -->
-          <div id="newTradeForm">
-            <div class="trade-row">
-              <label>Offer to:</label>
-              <select id="tradeTarget"></select>
-            </div>
-            <div class="trade-cols">
-              <div class="trade-section">
-                <strong>You offer</strong>
-                <label>💵 Cash <input type="number" id="tradeCashOffer" min="0" value="0" /></label>
-                <div id="tradePropsOffer" class="trade-props"></div>
-                <label class="trade-pardon"><input type="checkbox" id="tradePardonOffer"> 🃏 Pardon card</label>
-              </div>
-              <div class="trade-section">
-                <strong>You want</strong>
-                <label>💵 Cash <input type="number" id="tradeCashRequest" min="0" value="0" /></label>
-                <div id="tradePropsRequest" class="trade-props"></div>
-                <label class="trade-pardon"><input type="checkbox" id="tradePardonRequest"> 🃏 Pardon card</label>
-              </div>
-            </div>
-            <input type="text" id="tradeMessage" maxlength="200" placeholder="Message (optional)" />
-            <button id="tradeOfferBtn">📤 Send Offer</button>
-          </div>
-        </div>
-
-        <!-- Chat panel -->
-        <div id="chatPanel" class="chat-panel">
-          <h2>Chat</h2>
-          <div id="chatMessages" class="chat-messages"></div>
-          <div class="chat-input-row">
-            <input type="text" id="chatInput" maxlength="300" placeholder="Say something…" autocomplete="off" />
-            <button id="chatSendBtn">Send</button>
-          </div>
-        </div>
+      <div class="sb-title">TRADE</div>
+      <div id="pendingTrade" hidden>
+        <div id="pendingTradeDetails"></div>
       </div>
+      <div id="newTradeForm">
+        <div class="trade-row">
+          <span>Offer to:</span>
+          <select id="tradeTarget"></select>
+        </div>
+        <div class="trade-cols">
+          <div class="trade-section">
+            <strong>YOU OFFER</strong>
+            <label>💵 Cash <input type="number" id="tradeCashOffer" min="0" value="0" /></label>
+            <div id="tradePropsOffer" class="trade-props"></div>
+            <label><input type="checkbox" id="tradePardonOffer"> 🃏 Pardon card</label>
+          </div>
+          <div class="trade-section">
+            <strong>YOU WANT</strong>
+            <label>💵 Cash <input type="number" id="tradeCashRequest" min="0" value="0" /></label>
+            <div id="tradePropsRequest" class="trade-props"></div>
+            <label><input type="checkbox" id="tradePardonRequest"> 🃏 Pardon card</label>
+          </div>
+        </div>
+        <input type="text" id="tradeMessage" maxlength="200" placeholder="Message (optional)" />
+        <button id="tradeOfferBtn">📤 Send Offer</button>
+      </div>
+    </aside>
 
-      <h2 style="margin-top:20px">Board</h2>
-      <div id="board"></div>
-    </section>
-  </main>
-  <script type="module" src="/app.js"></script>
+  </div>
+</div>
+
+<script type="module" src="/app.js"></script>
 </body>
 </html>
