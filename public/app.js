@@ -35,17 +35,29 @@ async function refreshSessions() {
   });
 }
 
+let allMaps = [];
+
 async function joinSession(id) {
   if (eventSource) eventSource.close();
   activeSession = id;
   el('lobby').hidden = true;
   el('gameRoot').hidden = false;
-  const maps = await api('/api/maps');
-  map = maps.maps.find(m => m.id === (el('mapSelect').value)) || maps.maps[0];
+  // Load all maps once; the correct one is picked when state arrives (state.mapId)
+  if (allMaps.length === 0) {
+    const data = await api('/api/maps');
+    allMaps = data.maps;
+  }
   eventSource = new EventSource(`/api/sessions/${id}/stream`);
   eventSource.onmessage = (evt) => {
     const msg = JSON.parse(evt.data);
-    if (msg.state) { state = msg.state; render(); }
+    if (msg.state) {
+      state = msg.state;
+      // Always use the map the session was actually created with
+      if (!map || map.id !== state.mapId) {
+        map = allMaps.find(m => m.id === state.mapId) || allMaps[0];
+      }
+      render();
+    }
   };
 }
 
@@ -470,9 +482,10 @@ async function sendTradeAction(type, extra = {}) {
 
 async function loadMaps() {
   const data = await api('/api/maps');
+  allMaps = data.maps;
   const sel = el('mapSelect');
   sel.innerHTML = '';
-  data.maps.forEach(m => {
+  allMaps.forEach(m => {
     const o = document.createElement('option');
     o.value = m.id; o.textContent = m.name;
     sel.appendChild(o);

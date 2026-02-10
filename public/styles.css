@@ -196,9 +196,9 @@ button:disabled { background: var(--border2); color: var(--text3); box-shadow: n
 /* ── RING BOARD ────────────────────────────────────── */
 .ring-board {
   --cs: 72px;
-  --bs: min(580px, calc(100vh - 24px), calc(100vw - 540px));
-  width: var(--bs);
-  height: var(--bs);
+  /* Constrain to container width (100%) and viewport height, cap at 600px */
+  width: min(100%, calc(100vh - 24px), 600px);
+  aspect-ratio: 1;
   display: grid;
   grid-template-columns: var(--cs) repeat(9, 1fr) var(--cs);
   grid-template-rows: var(--cs) repeat(9, 1fr) var(--cs);
