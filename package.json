@@ -1,0 +1,11 @@
+{
+  "name": "meownopoly",
+  "version": "0.1.0",
+  "description": "Richup-style online monopoly MVP",
+  "type": "module",
+  "scripts": {
+    "start": "node server/index.js",
+    "dev": "node --watch server/index.js",
+    "test": "node --test"
+  }
+}

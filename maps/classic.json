@@ -1,0 +1,30 @@
+{
+  "id": "classic-v1",
+  "name": "Classic Arena",
+  "version": 1,
+  "theme": {
+    "primary": "#3b82f6",
+    "secondary": "#1f2937",
+    "accent": "#f59e0b",
+    "layout": "square"
+  },
+  "groups": {
+    "brown": { "size": 2, "maxHouses": 4, "monopolyThreshold": 2 },
+    "blue": { "size": 2, "maxHouses": 4, "monopolyThreshold": 2 }
+  },
+  "spaces": [
+    { "index": 0, "type": "Start", "name": "GO" },
+    { "index": 1, "type": "Property", "name": "Purr Avenue", "group": "brown", "price": 60, "rent": [2, 10, 30, 90, 160, 250] },
+    { "index": 2, "type": "CommunityChest", "name": "Community Chest" },
+    { "index": 3, "type": "Property", "name": "Meow Lane", "group": "brown", "price": 80, "rent": [4, 20, 60, 180, 320, 450] },
+    { "index": 4, "type": "Tax", "name": "Income Tax", "amount": 200 },
+    { "index": 5, "type": "Railroad", "name": "Whisker Rail", "price": 200, "rent": [25, 50, 100, 200] },
+    { "index": 6, "type": "Property", "name": "Azure Alley", "group": "blue", "price": 100, "rent": [6, 30, 90, 270, 400, 550] },
+    { "index": 7, "type": "Chance", "name": "Chance" },
+    { "index": 8, "type": "Property", "name": "Cobalt Court", "group": "blue", "price": 120, "rent": [8, 40, 100, 300, 450, 600] },
+    { "index": 9, "type": "Jail", "name": "Jail" },
+    { "index": 10, "type": "FreeParking", "name": "Vacation" },
+    { "index": 11, "type": "Utility", "name": "Catnip Electric", "price": 150 },
+    { "index": 12, "type": "GoToJail", "name": "Go To Jail" }
+  ]
+}

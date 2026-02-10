@@ -1,0 +1,36 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Meownopoly</title>
+  <link rel="stylesheet" href="/styles.css" />
+</head>
+<body>
+  <main>
+    <h1>Meownopoly Quick Match</h1>
+    <section class="panel">
+      <input id="name" placeholder="Your name" />
+      <button id="queueBtn">Join Queue</button>
+      <div id="queueStatus"></div>
+    </section>
+
+    <section class="panel">
+      <h2>Sessions</h2>
+      <ul id="sessions"></ul>
+    </section>
+
+    <section class="panel" id="gamePanel" hidden>
+      <h2>Board</h2>
+      <div id="board"></div>
+      <div id="dash"></div>
+      <div class="actions">
+        <button id="rollBtn">Roll</button>
+        <button id="buyBtn">Buy</button>
+        <button id="endBtn">End Turn</button>
+      </div>
+    </section>
+  </main>
+  <script type="module" src="/app.js"></script>
+</body>
+</html>
