@@ -146,6 +146,10 @@ function resolveSpace(state, player, space, rules, map) {
       player.cash -= space.amount;
       state.bank.vacationPot += space.amount;
       break;
+    case 'TaxRefund':
+      player.cash += space.amount;
+      state.log.push({ t: Date.now(), type: 'TAX_REFUND', playerId: player.id, amount: space.amount });
+      break;
     case 'FreeParking':
       player.cash += state.bank.vacationPot;
       state.bank.vacationPot = 0;

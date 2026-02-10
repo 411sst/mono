@@ -13,8 +13,10 @@ export class SessionManager {
     setInterval(() => this.tickTimeouts(), 1000);
   }
 
-  enqueue(name) {
-    const player = { id: randomUUID(), name, joinedAt: Date.now() };
+  enqueue(name, mapId) {
+    const map = mapId ? this.mapCatalog.get(mapId) : this.mapCatalog.values().next().value;
+    if (!map) return null;
+    const player = { id: randomUUID(), name, joinedAt: Date.now(), mapId: map.id };
     this.queue.push(player);
     if (this.queue.length >= 2) this.createMatch();
     return player;
@@ -22,7 +24,8 @@ export class SessionManager {
 
   createMatch() {
     const players = this.queue.splice(0, 2);
-    const map = this.mapCatalog.values().next().value;
+    const mapId = players[0].mapId;
+    const map = this.mapCatalog.get(mapId) || this.mapCatalog.values().next().value;
     // Pass full player objects so their IDs are preserved in state
     const state = createInitialState({ map, rules: this.rules, players });
     const session = { id: state.id, mapId: map.id, state, reconnect: {} };

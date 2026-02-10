@@ -135,7 +135,8 @@ function renderGameOver() {
 
 el('queueBtn').onclick = async () => {
   const name = el('name').value.trim() || 'Guest';
-  const data = await api('/api/queue', { method: 'POST', body: JSON.stringify({ name }) });
+  const mapId = el('mapSelect').value;
+  const data = await api('/api/queue', { method: 'POST', body: JSON.stringify({ name, mapId }) });
   myPlayerId = data.player?.id || null;
   el('queueStatus').textContent = data.queued
     ? `Queued as "${data.player.name}" (id: ${data.player.id.slice(0, 8)}…). Waiting for opponent…`
@@ -159,5 +160,20 @@ async function sendAction(type) {
   if (!out.ok) alert(out.reason);
 }
 
+// --- Boot ---
+
+async function loadMaps() {
+  const data = await api('/api/maps');
+  const sel = el('mapSelect');
+  sel.innerHTML = '';
+  data.maps.forEach((m) => {
+    const opt = document.createElement('option');
+    opt.value = m.id;
+    opt.textContent = m.name;
+    sel.appendChild(opt);
+  });
+}
+
+loadMaps();
 refreshSessions();
 setInterval(refreshSessions, 4000);
