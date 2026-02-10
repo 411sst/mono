@@ -105,6 +105,41 @@ button:hover:not(:disabled) { background: #2563eb; }
 .space.railroad { background: #0f172a; border-color: #94a3b8; }
 .space.utility { background: #0f1a0f; border-color: #4ade80; }
 
+/* Trade panel */
+.trade-panel, .chat-panel { background: #1f2937; border-radius: 12px; padding: 16px; margin-top: 16px; }
+.trade-cols { display: flex; gap: 12px; flex-wrap: wrap; margin: 10px 0; }
+.trade-section { flex: 1; min-width: 180px; background: #111827; border-radius: 8px; padding: 10px; display: flex; flex-direction: column; gap: 6px; }
+.trade-section strong { color: #9ca3af; font-size: 0.8rem; text-transform: uppercase; letter-spacing: .05em; }
+.trade-section label { display: flex; align-items: center; gap: 6px; font-size: 0.85rem; }
+.trade-section input[type="number"] { width: 90px; }
+.trade-props { display: flex; flex-direction: column; gap: 3px; max-height: 120px; overflow-y: auto; }
+.trade-props label { font-size: 0.8rem; }
+.trade-pardon { font-size: 0.85rem; margin-top: 4px; }
+.trade-row { display: flex; align-items: center; gap: 8px; margin-bottom: 10px; font-size: 0.9rem; }
+#tradeMessage { width: 100%; margin: 8px 0; }
+#tradeOfferBtn { margin-top: 4px; }
+
+/* Pending trade */
+.pending-trade { background: #111827; border-radius: 8px; padding: 12px; margin-bottom: 10px; }
+.trade-detail { font-size: 0.9rem; display: flex; flex-direction: column; gap: 6px; }
+.trade-msg { color: #9ca3af; font-size: 0.85rem; }
+.pending-trade-actions { display: flex; gap: 8px; margin-top: 10px; }
+#tradeAcceptBtn { background: #059669; }
+#tradeAcceptBtn:hover { background: #047857; }
+#tradeRejectBtn { background: #dc2626; }
+#tradeRejectBtn:hover { background: #b91c1c; }
+#tradeCancelBtn { background: #78350f; }
+#tradeCancelBtn:hover { background: #92400e; }
+
+/* Chat panel */
+.chat-messages { height: 180px; overflow-y: auto; background: #111827; border-radius: 8px; padding: 8px; margin-bottom: 10px; display: flex; flex-direction: column; gap: 4px; }
+.chat-msg { font-size: 0.85rem; padding: 4px 8px; border-radius: 6px; background: #1f2937; word-break: break-word; }
+.chat-msg.mine { background: #1e3a5f; }
+.chat-msg strong { color: #60a5fa; margin-right: 4px; }
+.chat-input-row { display: flex; gap: 8px; }
+.chat-input-row input { flex: 1; }
+
 @media (max-width: 700px) {
   #board { grid-template-columns: repeat(3, 1fr); }
+  .trade-cols { flex-direction: column; }
 }

@@ -34,6 +34,55 @@
         <button id="usePardonBtn" hidden>Use Pardon Card</button>
         <button id="endBtn" disabled>End Turn</button>
       </div>
+      <!-- Trade panel -->
+      <div id="tradePanel" class="trade-panel">
+        <h2>Trade</h2>
+
+        <!-- Pending trade — shown when state.pendingTrade exists -->
+        <div id="pendingTrade" hidden class="pending-trade">
+          <div id="pendingTradeDetails"></div>
+          <div class="pending-trade-actions">
+            <button id="tradeAcceptBtn" hidden>Accept Trade</button>
+            <button id="tradeRejectBtn" hidden>Reject Trade</button>
+            <button id="tradeCancelBtn" hidden>Cancel Trade</button>
+          </div>
+        </div>
+
+        <!-- New trade form — shown when no pending trade -->
+        <div id="newTradeForm">
+          <div class="trade-row">
+            <label>Offer to:</label>
+            <select id="tradeTarget"></select>
+          </div>
+          <div class="trade-cols">
+            <div class="trade-section">
+              <strong>You offer</strong>
+              <label>Cash <input type="number" id="tradeCashOffer" min="0" value="0" /></label>
+              <div id="tradePropsOffer" class="trade-props"></div>
+              <label class="trade-pardon"><input type="checkbox" id="tradePardonOffer"> Pardon card</label>
+            </div>
+            <div class="trade-section">
+              <strong>You want</strong>
+              <label>Cash <input type="number" id="tradeCashRequest" min="0" value="0" /></label>
+              <div id="tradePropsRequest" class="trade-props"></div>
+              <label class="trade-pardon"><input type="checkbox" id="tradePardonRequest"> Pardon card</label>
+            </div>
+          </div>
+          <input type="text" id="tradeMessage" maxlength="200" placeholder="Message (optional)" />
+          <button id="tradeOfferBtn">Send Offer</button>
+        </div>
+      </div>
+
+      <!-- Chat panel -->
+      <div id="chatPanel" class="chat-panel">
+        <h2>Chat</h2>
+        <div id="chatMessages" class="chat-messages"></div>
+        <div class="chat-input-row">
+          <input type="text" id="chatInput" maxlength="300" placeholder="Say something…" />
+          <button id="chatSendBtn">Send</button>
+        </div>
+      </div>
+
       <h2>Board</h2>
       <div id="board"></div>
     </section>

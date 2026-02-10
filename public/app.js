@@ -45,6 +45,8 @@ function render() {
   renderBoard();
   renderDash();
   renderActions();
+  renderTrade();
+  renderChat();
   if (state.status === 'finished') renderGameOver();
 }
 
@@ -106,6 +108,10 @@ function renderDash() {
       case 'JAIL_ESCAPE':msg = `${name} escaped jail! → ${lastEvent.landed}`; break;
       case 'PAY_JAIL':        msg = `${name} paid $${lastEvent.fine} to leave jail`; break;
       case 'USE_PARDON':      msg = `${name} used a Pardon card to leave jail`; break;
+      case 'TRADE_OFFER':     msg = `${name} proposed a trade`; break;
+      case 'TRADE_ACCEPT':    msg = `${name} accepted a trade`; break;
+      case 'TRADE_REJECT':    msg = `${name} rejected a trade`; break;
+      case 'TRADE_CANCEL':    msg = `${name} cancelled a trade offer`; break;
       case 'PARDON_RECEIVED': msg = `${name} received a Pardon (Get Out of Jail Free) card`; break;
       case 'EACH_PLAYER':     msg = lastEvent.amount > 0 ? `${name} collected $${lastEvent.amount} from each player` : `${name} paid $${-lastEvent.amount} to each player`; break;
       case 'RENOVATION':      msg = `${name} paid $${lastEvent.amount} for property renovations`; break;
@@ -137,6 +143,151 @@ function renderGameOver() {
   el('gameOver').hidden = false;
   el('gameOver').textContent = winner ? `Game over! ${winner.name} wins!` : 'Game over!';
 }
+
+// --- Trade ---
+
+function renderTrade() {
+  if (!state) return;
+  const me = state.players.find((p) => p.id === myPlayerId);
+  const trade = state.pendingTrade;
+
+  if (trade) {
+    // Show pending trade, hide new-offer form
+    el('pendingTrade').hidden = false;
+    el('newTradeForm').hidden = true;
+
+    const from = state.players.find((p) => p.id === trade.fromId);
+    const to   = state.players.find((p) => p.id === trade.toId);
+    const offerProps   = trade.offer.properties.map((i) => map?.spaces[i]?.name || `#${i}`).join(', ') || '—';
+    const requestProps = trade.request.properties.map((i) => map?.spaces[i]?.name || `#${i}`).join(', ') || '—';
+
+    el('pendingTradeDetails').innerHTML = `
+      <div class="trade-detail">
+        <strong>${from?.name}</strong> → <strong>${to?.name}</strong>
+        ${trade.message ? `<em class="trade-msg">"${trade.message}"</em>` : ''}
+        <div class="trade-cols">
+          <div class="trade-section">
+            <strong>${from?.name} offers</strong>
+            <div>💵 $${trade.offer.cash}</div>
+            <div>🏠 ${offerProps}</div>
+            ${trade.offer.pardonCards ? `<div>🃏 ${trade.offer.pardonCards} Pardon card(s)</div>` : ''}
+          </div>
+          <div class="trade-section">
+            <strong>${from?.name} wants</strong>
+            <div>💵 $${trade.request.cash}</div>
+            <div>🏠 ${requestProps}</div>
+            ${trade.request.pardonCards ? `<div>🃏 ${trade.request.pardonCards} Pardon card(s)</div>` : ''}
+          </div>
+        </div>
+      </div>`;
+
+    const isMeRecipient = me && trade.toId === me.id;
+    const isMeOfferer   = me && trade.fromId === me.id;
+    el('tradeAcceptBtn').hidden = !isMeRecipient;
+    el('tradeRejectBtn').hidden = !isMeRecipient;
+    el('tradeCancelBtn').hidden = !isMeOfferer;
+  } else {
+    // Show new-offer form
+    el('pendingTrade').hidden = true;
+    el('newTradeForm').hidden = false;
+
+    // Populate target selector with other non-bankrupt players
+    const targetSel = el('tradeTarget');
+    const prevTarget = targetSel.value;
+    targetSel.innerHTML = '';
+    state.players.filter((p) => !p.bankrupt && p.id !== myPlayerId).forEach((p) => {
+      const opt = document.createElement('option');
+      opt.value = p.id;
+      opt.textContent = p.name;
+      targetSel.appendChild(opt);
+    });
+    if (prevTarget) targetSel.value = prevTarget;
+
+    // Populate my properties (offer side)
+    const myProps = Object.entries(state.ownership || {})
+      .filter(([, o]) => o.ownerId === myPlayerId)
+      .map(([idx]) => ({ idx: Number(idx), name: map?.spaces[Number(idx)]?.name || `#${idx}` }));
+    el('tradePropsOffer').innerHTML = myProps.map((p) =>
+      `<label><input type="checkbox" class="prop-offer" value="${p.idx}"> ${p.name}</label>`
+    ).join('');
+
+    // Populate target's properties (request side) — update on target change
+    populateRequestProps();
+  }
+}
+
+function populateRequestProps() {
+  const targetId = el('tradeTarget').value;
+  const targetProps = Object.entries(state.ownership || {})
+    .filter(([, o]) => o.ownerId === targetId)
+    .map(([idx]) => ({ idx: Number(idx), name: map?.spaces[Number(idx)]?.name || `#${idx}` }));
+  el('tradePropsRequest').innerHTML = targetProps.map((p) =>
+    `<label><input type="checkbox" class="prop-request" value="${p.idx}"> ${p.name}</label>`
+  ).join('');
+}
+
+el('tradeTarget')?.addEventListener('change', populateRequestProps);
+
+el('tradeOfferBtn').onclick = () => {
+  if (!myPlayerId || !activeSession) return;
+  const toId     = el('tradeTarget').value;
+  const cash     = Number(el('tradeCashOffer').value) || 0;
+  const reqCash  = Number(el('tradeCashRequest').value) || 0;
+  const offerProps   = [...document.querySelectorAll('.prop-offer:checked')].map((c) => Number(c.value));
+  const requestProps = [...document.querySelectorAll('.prop-request:checked')].map((c) => Number(c.value));
+  const pardonOffer   = el('tradePardonOffer').checked ? 1 : 0;
+  const pardonRequest = el('tradePardonRequest').checked ? 1 : 0;
+  const message = el('tradeMessage').value.trim();
+  sendTradeAction('TRADE_OFFER', {
+    toId,
+    offer:   { cash, properties: offerProps, pardonCards: pardonOffer },
+    request: { cash: reqCash, properties: requestProps, pardonCards: pardonRequest },
+    message: message || null,
+  });
+};
+
+el('tradeAcceptBtn').onclick = () => sendTradeAction('TRADE_ACCEPT');
+el('tradeRejectBtn').onclick = () => sendTradeAction('TRADE_REJECT');
+el('tradeCancelBtn').onclick = () => sendTradeAction('TRADE_CANCEL');
+
+async function sendTradeAction(type, extra = {}) {
+  if (!activeSession) return;
+  const out = await api(`/api/sessions/${activeSession}/action`, {
+    method: 'POST',
+    body: JSON.stringify({ action: { type, ...extra }, expectedVersion: state?.version, playerId: myPlayerId }),
+  });
+  if (!out.ok) alert(out.reason);
+}
+
+// --- Chat ---
+
+function renderChat() {
+  if (!state?.chat) return;
+  const box = el('chatMessages');
+  box.innerHTML = state.chat.map((m) => {
+    const isMe = m.playerId === myPlayerId;
+    return `<div class="chat-msg${isMe ? ' mine' : ''}"><strong>${m.name}:</strong> ${escHtml(m.text)}</div>`;
+  }).join('');
+  box.scrollTop = box.scrollHeight;
+}
+
+function escHtml(s) {
+  return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+}
+
+async function sendChat() {
+  const input = el('chatInput');
+  const text = input.value.trim();
+  if (!text || !activeSession || !myPlayerId) return;
+  input.value = '';
+  await api(`/api/sessions/${activeSession}/chat`, {
+    method: 'POST',
+    body: JSON.stringify({ playerId: myPlayerId, message: text }),
+  });
+}
+
+el('chatSendBtn').onclick = sendChat;
+el('chatInput').addEventListener('keydown', (e) => { if (e.key === 'Enter') sendChat(); });
 
 // --- Queue ---
 

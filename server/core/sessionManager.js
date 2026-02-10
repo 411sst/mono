@@ -68,18 +68,40 @@ export class SessionManager {
   act(sessionId, action, expectedVersion, playerId) {
     const session = this.sessions.get(sessionId);
     if (!session) return { ok: false, reason: 'Session not found' };
-    if (expectedVersion !== session.state.version) return { ok: false, reason: 'Version conflict' };
 
-    // Validate it is this player's turn
-    const current = currentPlayer(session.state);
-    if (playerId && current.id !== playerId) return { ok: false, reason: 'Not your turn' };
+    const tradeTypes = new Set(['TRADE_OFFER', 'TRADE_ACCEPT', 'TRADE_REJECT', 'TRADE_CANCEL']);
+    const isTrade = tradeTypes.has(action.type);
+
+    // Trade responses (accept/reject/cancel) skip version check — they reference pendingTrade directly
+    if (!isTrade && expectedVersion !== session.state.version) {
+      return { ok: false, reason: 'Version conflict' };
+    }
+
+    // Non-trade actions require it to be the player's turn
+    if (!isTrade) {
+      const current = currentPlayer(session.state);
+      if (playerId && current.id !== playerId) return { ok: false, reason: 'Not your turn' };
+    }
 
     const map = this.mapCatalog.get(session.mapId);
-    const result = applyAction(session.state, action, map, this.rules);
+    const result = applyAction(session.state, action, map, this.rules, playerId);
     if (!result.ok) return result;
     this.store.saveSession(session);
     this.broadcast(sessionId, { type: 'STATE', state: session.state });
     return { ok: true, state: session.state };
+  }
+
+  chat(sessionId, playerId, message) {
+    const session = this.sessions.get(sessionId);
+    if (!session) return { ok: false, reason: 'Session not found' };
+    const player = session.state.players.find((p) => p.id === playerId);
+    if (!player) return { ok: false, reason: 'Player not found' };
+    const entry = { t: Date.now(), playerId, name: player.name, text: String(message).slice(0, 300) };
+    session.state.chat.push(entry);
+    if (session.state.chat.length > 50) session.state.chat.shift();
+    this.store.saveSession(session);
+    this.broadcast(sessionId, { type: 'STATE', state: session.state });
+    return { ok: true };
   }
 
   tickTimeouts() {

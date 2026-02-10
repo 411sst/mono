@@ -46,6 +46,13 @@ const server = http.createServer(async (req, res) => {
     return json(res, result.ok ? 200 : 400, result);
   }
 
+  if (req.method === 'POST' && url.pathname.match(/^\/api\/sessions\/[\w-]+\/chat$/)) {
+    const sessionId = url.pathname.split('/')[3];
+    const b = await body(req);
+    const result = sessions.chat(sessionId, b.playerId, b.message || '');
+    return json(res, result.ok ? 200 : 400, result);
+  }
+
   if (req.method === 'GET' && url.pathname.match(/^\/api\/sessions\/[\w-]+\/stream$/)) {
     const sessionId = url.pathname.split('/')[3];
     res.writeHead(200, {
