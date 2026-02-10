@@ -2,26 +2,47 @@ import { currentPlayer } from './state.js';
 
 // --- Card decks ---
 
+// Surprise cards (Chance) — 17 cards from richup.io
+// Cards 9, 12, 17 are "advance to random city" (replacing specific city advances)
 const CHANCE_CARDS = [
-  { desc: 'Advance to GO',              effect: { type: 'move',  to: 0 } },
-  { desc: 'Bank pays dividend',         effect: { type: 'cash',  amount: 50 } },
-  { desc: 'Go to Jail',                 effect: { type: 'jail' } },
-  { desc: 'Pay poor tax',               effect: { type: 'cash',  amount: -15 } },
-  { desc: 'Collect building loan',      effect: { type: 'cash',  amount: 150 } },
-  { desc: 'Go back 3 spaces',           effect: { type: 'back',  amount: 3 } },
-  { desc: 'Speeding fine',              effect: { type: 'cash',  amount: -15 } },
-  { desc: 'Bank error in your favour',  effect: { type: 'cash',  amount: 200 } },
+  { desc: 'Advance to the next airport',                                  effect: { type: 'nearestRailroad' } },
+  { desc: 'Go back 3 steps',                                              effect: { type: 'back',        amount: 3 } },
+  { desc: 'Advance to Start',                                             effect: { type: 'move',        to: 0 } },
+  { desc: 'Pay tax of $20',                                               effect: { type: 'cash',        amount: -20 } },
+  { desc: 'Advance to the next company',                                  effect: { type: 'nearestUtility' } },
+  { desc: 'Stock agency pays you dividend of $60',                        effect: { type: 'cash',        amount: 60 } },
+  { desc: 'Got a Pardon card from the surprises stack',                   effect: { type: 'pardon' } },
+  { desc: 'Go to prison',                                                 effect: { type: 'jail' } },
+  { desc: 'Advance to a random city',                                     effect: { type: 'randomCity' } },
+  { desc: 'You have a new investment. Receive $150',                      effect: { type: 'cash',        amount: 150 } },
+  { desc: 'You lost a bet. Pay each player $50',                          effect: { type: 'eachPlayer',  amount: -50 } },
+  { desc: 'Advance to a random city',                                     effect: { type: 'randomCity' } },
+  { desc: 'Have a redesign for your properties. Pay $25/house $100/hotel',effect: { type: 'renovation',  houseCost: 25, hotelCost: 100 } },
+  { desc: 'From a scholarship you get $100',                              effect: { type: 'cash',        amount: 100 } },
+  { desc: 'Take a trip to the nearest airport',                           effect: { type: 'nearestRailroad' } },
+  { desc: 'Your cousin needs some financial assistance. Pay $50',         effect: { type: 'cash',        amount: -50 } },
+  { desc: 'Advance to a random city',                                     effect: { type: 'randomCity' } },
 ];
 
+// Treasure cards (Community Chest) — 17 cards from richup.io
 const COMMUNITY_CHEST_CARDS = [
-  { desc: 'Bank error in your favour',  effect: { type: 'cash',  amount: 200 } },
-  { desc: "Doctor's fee",               effect: { type: 'cash',  amount: -50 } },
-  { desc: 'Income tax refund',          effect: { type: 'cash',  amount: 20 } },
-  { desc: 'Inheritance',                effect: { type: 'cash',  amount: 100 } },
-  { desc: 'Pay hospital fees',          effect: { type: 'cash',  amount: -100 } },
-  { desc: 'Holiday fund matures',       effect: { type: 'cash',  amount: 100 } },
-  { desc: 'Advance to GO',              effect: { type: 'move',  to: 0 } },
-  { desc: 'Insurance premium due',      effect: { type: 'cash',  amount: -50 } },
+  { desc: 'Happy holidays — receive $20',                                 effect: { type: 'cash',        amount: 20 } },
+  { desc: 'From trading stocks you earned $50',                           effect: { type: 'cash',        amount: 50 } },
+  { desc: 'You received $100 from your sibling',                          effect: { type: 'cash',        amount: 100 } },
+  { desc: 'Advance to Start',                                             effect: { type: 'move',        to: 0 } },
+  { desc: 'Go to prison',                                                 effect: { type: 'jail' } },
+  { desc: 'From gift cards you get $100',                                 effect: { type: 'cash',        amount: 100 } },
+  { desc: 'You found a wallet containing some cash. Collect $200',        effect: { type: 'cash',        amount: 200 } },
+  { desc: 'You have won third prize in a lottery. Collect $15',           effect: { type: 'cash',        amount: 15 } },
+  { desc: "It's time to renovate. Pay $30/house $120/hotel",              effect: { type: 'renovation',  houseCost: 30, hotelCost: 120 } },
+  { desc: 'Beneficial business decisions. You made a profit of $25',      effect: { type: 'cash',        amount: 25 } },
+  { desc: 'Tax refund. Collect $100',                                     effect: { type: 'cash',        amount: 100 } },
+  { desc: 'Your phone died. Pay $50 for a repair',                        effect: { type: 'cash',        amount: -50 } },
+  { desc: 'Got a Pardon card from the treasures stack',                   effect: { type: 'pardon' } },
+  { desc: 'You host a party. Collect $50 from every player',              effect: { type: 'eachPlayer',  amount: 50 } },
+  { desc: 'Your car has run out of gas. Pay $50',                         effect: { type: 'cash',        amount: -50 } },
+  { desc: 'Happy birthday! Collect $10 from every player',                effect: { type: 'eachPlayer',  amount: 10 } },
+  { desc: 'Car rental insurance. Pay $60',                                effect: { type: 'cash',        amount: -60 } },
 ];
 
 // --- Dice ---
@@ -40,11 +61,12 @@ export function applyAction(state, action, map, rules) {
   if (!player || player.bankrupt) return reject('Invalid current player');
 
   switch (action.type) {
-    case 'ROLL':    return handleRoll(state, player, map, rules);
-    case 'BUY':     return handleBuy(state, player, map, rules);
-    case 'END_TURN': return handleEndTurn(state, player, rules);
-    case 'PAY_JAIL': return handlePayJail(state, player, map, rules);
-    default:        return reject('Unsupported action');
+    case 'ROLL':      return handleRoll(state, player, map, rules);
+    case 'BUY':       return handleBuy(state, player, map, rules);
+    case 'END_TURN':  return handleEndTurn(state, player, rules);
+    case 'PAY_JAIL':  return handlePayJail(state, player, map, rules);
+    case 'USE_PARDON': return handleUsePardon(state, player, map, rules);
+    default:          return reject('Unsupported action');
   }
 }
 
@@ -118,6 +140,18 @@ function handlePayJail(state, player, map, rules) {
   // Don't advance turn — player now rolls
   state.version += 1;
   return { ok: true, state, payload: { paidJail: true } };
+}
+
+function handleUsePardon(state, player, map, rules) {
+  if (!player.inJail) return reject('Not in jail');
+  if (!player.pardonCards || player.pardonCards < 1) return reject('No Pardon card');
+  player.pardonCards -= 1;
+  player.inJail = false;
+  player.jailTurns = 0;
+  state.log.push({ t: Date.now(), type: 'USE_PARDON', playerId: player.id });
+  // Player now rolls freely next action — don't advance turn
+  state.version += 1;
+  return { ok: true, state, payload: { usedPardon: true } };
 }
 
 function handleBuy(state, player, map, rules) {
@@ -197,6 +231,7 @@ function applyCard(state, player, map, rules, deck) {
   if (effect.type === 'cash') {
     player.cash += effect.amount;
     if (effect.amount < 0) state.bank.vacationPot -= effect.amount;
+
   } else if (effect.type === 'move') {
     const oldPos = player.position;
     player.position = effect.to;
@@ -206,15 +241,93 @@ function applyCard(state, player, map, rules, deck) {
     }
     const space = map.spaces[player.position];
     resolveSpace(state, player, space, rules, map);
+
   } else if (effect.type === 'back') {
     const newPos = (player.position - effect.amount + map.spaces.length) % map.spaces.length;
     player.position = newPos;
     const space = map.spaces[newPos];
     resolveSpace(state, player, space, rules, map);
+
   } else if (effect.type === 'jail') {
     player.position = rules.jailIndex;
     player.inJail = true;
     player.jailTurns = 0;
+
+  } else if (effect.type === 'pardon') {
+    player.pardonCards = (player.pardonCards || 0) + 1;
+    state.log.push({ t: Date.now(), type: 'PARDON_RECEIVED', playerId: player.id });
+
+  } else if (effect.type === 'eachPlayer') {
+    // Positive amount = collect from each other; negative = pay each other
+    const others = state.players.filter((p) => !p.bankrupt && p.id !== player.id);
+    for (const other of others) {
+      player.cash += effect.amount;
+      other.cash -= effect.amount;
+    }
+    state.log.push({ t: Date.now(), type: 'EACH_PLAYER', playerId: player.id, amount: effect.amount });
+
+  } else if (effect.type === 'renovation') {
+    let total = 0;
+    for (const [idx, ownership] of Object.entries(state.ownership)) {
+      if (ownership.ownerId !== player.id) continue;
+      const space = map.spaces[Number(idx)];
+      const group = space && space.group ? map.groups?.[space.group] : null;
+      const maxHouses = group?.maxHouses ?? 4;
+      if (ownership.houses >= maxHouses) {
+        total += effect.hotelCost;  // max houses = hotel
+      } else {
+        total += ownership.houses * effect.houseCost;
+      }
+    }
+    player.cash -= total;
+    if (total > 0) state.bank.vacationPot += total;
+    state.log.push({ t: Date.now(), type: 'RENOVATION', playerId: player.id, amount: total });
+
+  } else if (effect.type === 'nearestRailroad') {
+    const pos = player.position;
+    const railroads = map.spaces
+      .filter((s) => s.type === 'Railroad')
+      .map((s) => s.index)
+      .sort((a, b) => a - b);
+    if (railroads.length > 0) {
+      const next = railroads.find((r) => r > pos) ?? railroads[0];
+      if (next <= pos) {
+        player.cash += rules.goSalary;
+        state.log.push({ t: Date.now(), type: 'GO_SALARY', playerId: player.id, amount: rules.goSalary });
+      }
+      player.position = next;
+      resolveSpace(state, player, map.spaces[next], rules, map);
+    }
+
+  } else if (effect.type === 'nearestUtility') {
+    const pos = player.position;
+    const utilities = map.spaces
+      .filter((s) => s.type === 'Utility')
+      .map((s) => s.index)
+      .sort((a, b) => a - b);
+    if (utilities.length > 0) {
+      const next = utilities.find((u) => u > pos) ?? utilities[0];
+      if (next <= pos) {
+        player.cash += rules.goSalary;
+        state.log.push({ t: Date.now(), type: 'GO_SALARY', playerId: player.id, amount: rules.goSalary });
+      }
+      player.position = next;
+      resolveSpace(state, player, map.spaces[next], rules, map);
+    }
+
+  } else if (effect.type === 'randomCity') {
+    const properties = map.spaces.filter((s) => s.type === 'Property');
+    if (properties.length > 0) {
+      const target = properties[Math.floor(Math.random() * properties.length)];
+      const oldPos = player.position;
+      player.position = target.index;
+      if (target.index < oldPos) {
+        player.cash += rules.goSalary;
+        state.log.push({ t: Date.now(), type: 'GO_SALARY', playerId: player.id, amount: rules.goSalary });
+      }
+      state.log.push({ t: Date.now(), type: 'RANDOM_CITY', playerId: player.id, landed: target.name });
+      resolveSpace(state, player, target, rules, map);
+    }
   }
 }
 

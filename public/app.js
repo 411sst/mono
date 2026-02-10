@@ -81,10 +81,11 @@ function renderDash() {
     const isBankrupt = p.bankrupt;
     const isMe = p.id === myPlayerId;
     const jailTag = p.inJail ? ' [JAIL]' : '';
+    const pardonTag = p.pardonCards > 0 ? ` [PARDON x${p.pardonCards}]` : '';
     const bankruptTag = isBankrupt ? ' [BANKRUPT]' : '';
     const turnTag = isActive ? ' <span class="turn-arrow">&#8592; TURN</span>' : '';
     return `<div class="player-row${isMe ? ' me' : ''}${isBankrupt ? ' bankrupt' : ''}">
-      ${p.name}: $${p.cash}${jailTag}${bankruptTag}${turnTag}
+      ${p.name}: $${p.cash}${jailTag}${pardonTag}${bankruptTag}${turnTag}
     </div>`;
   }).join('');
 
@@ -103,10 +104,15 @@ function renderDash() {
       case 'BANKRUPT':   msg = `${name} went bankrupt!`; break;
       case 'JAIL_ROLL':  msg = `${name} rolled ${lastEvent.d1}+${lastEvent.d2} in jail`; break;
       case 'JAIL_ESCAPE':msg = `${name} escaped jail! → ${lastEvent.landed}`; break;
-      case 'PAY_JAIL':   msg = `${name} paid $${lastEvent.fine} to leave jail`; break;
-      case 'TIMEOUT':    msg = `${name} timed out (penalty: $${lastEvent.count * 50})`; break;
-      case 'GAME_OVER':  msg = `Game over!`; break;
-      default:           msg = lastEvent.type;
+      case 'PAY_JAIL':        msg = `${name} paid $${lastEvent.fine} to leave jail`; break;
+      case 'USE_PARDON':      msg = `${name} used a Pardon card to leave jail`; break;
+      case 'PARDON_RECEIVED': msg = `${name} received a Pardon (Get Out of Jail Free) card`; break;
+      case 'EACH_PLAYER':     msg = lastEvent.amount > 0 ? `${name} collected $${lastEvent.amount} from each player` : `${name} paid $${-lastEvent.amount} to each player`; break;
+      case 'RENOVATION':      msg = `${name} paid $${lastEvent.amount} for property renovations`; break;
+      case 'RANDOM_CITY':     msg = `${name} advanced to ${lastEvent.landed}`; break;
+      case 'TIMEOUT':         msg = `${name} timed out (penalty: $${lastEvent.count * 50})`; break;
+      case 'GAME_OVER':       msg = `Game over!`; break;
+      default:                msg = lastEvent.type;
     }
     el('lastEvent').textContent = msg;
   }
@@ -121,6 +127,7 @@ function renderActions() {
   el('endBtn').disabled = !isMyTurn || finished;
   el('buyBtn').disabled = !isMyTurn || finished;
   el('payJailBtn').hidden = !isMyTurn || !me?.inJail || finished;
+  el('usePardonBtn').hidden = !isMyTurn || !me?.inJail || !(me?.pardonCards > 0) || finished;
   el('rollBtn').hidden = false;
   el('endBtn').hidden = false;
 }
@@ -146,10 +153,11 @@ el('queueBtn').onclick = async () => {
 
 // --- Actions ---
 
-el('rollBtn').onclick    = () => sendAction('ROLL');
-el('buyBtn').onclick     = () => sendAction('BUY');
-el('endBtn').onclick     = () => sendAction('END_TURN');
-el('payJailBtn').onclick = () => sendAction('PAY_JAIL');
+el('rollBtn').onclick       = () => sendAction('ROLL');
+el('buyBtn').onclick        = () => sendAction('BUY');
+el('endBtn').onclick        = () => sendAction('END_TURN');
+el('payJailBtn').onclick    = () => sendAction('PAY_JAIL');
+el('usePardonBtn').onclick  = () => sendAction('USE_PARDON');
 
 async function sendAction(type) {
   if (!activeSession || !state) return;

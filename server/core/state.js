@@ -18,6 +18,7 @@ export function createInitialState({ map, rules, players }) {
     position: 0,
     inJail: false,
     jailTurns: 0,
+    pardonCards: 0,
     timeoutCount: 0,
     connected: true,
     bankrupt: false
@@ -35,7 +36,7 @@ export function createInitialState({ map, rules, players }) {
     players: entities,
     ownership: {},
     bank: { vacationPot: 0 },
-    cardDecks: { chance: shuffleDeck(8), community: shuffleDeck(8) },
+    cardDecks: { chance: shuffleDeck(17), community: shuffleDeck(17) },
     log: []
   };
 }
