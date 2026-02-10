@@ -4,6 +4,16 @@ let map = null;
 let myPlayerId = null;
 let eventSource = null;
 
+// Stable color index per player (assigned on first render)
+const playerColorIndex = {};
+const COLORS = ['p-color-0','p-color-1','p-color-2','p-color-3','p-color-4','p-color-5'];
+function colorFor(playerId) {
+  if (playerColorIndex[playerId] === undefined) {
+    playerColorIndex[playerId] = Object.keys(playerColorIndex).length % COLORS.length;
+  }
+  return COLORS[playerColorIndex[playerId]];
+}
+
 const el = (id) => document.getElementById(id);
 
 async function api(path, options = {}) {
@@ -44,6 +54,7 @@ async function joinSession(id) {
 function render() {
   renderBoard();
   renderDash();
+  renderDice();
   renderActions();
   renderPropPanel();
   renderTrade();
@@ -73,27 +84,34 @@ function renderBoard() {
       ? `<span class="house-tag">${owned.houses >= maxH ? '🏨' : '🏠'.repeat(owned.houses)}</span>`
       : '';
     const tokens = players.map((p) => {
-      const isMe = p.id === myPlayerId;
-      return `<span class="token${isMe ? ' mine' : ''}" title="${p.name}">${p.name[0]}</span>`;
+      const colorCls = colorFor(p.id);
+      return `<span class="token ${colorCls}" title="${p.name}">${p.name[0]}</span>`;
     }).join('');
 
-    div.innerHTML = `${colorDot}<strong>${space.name}</strong><br/><small>${space.type}</small>${ownerTag}${houseTag}${tokens ? `<div class="tokens">${tokens}</div>` : ''}`;
+    div.innerHTML = `${colorDot}<strong>${space.name}</strong><small>${space.type}</small>${ownerTag}${houseTag}${tokens ? `<div class="tokens">${tokens}</div>` : ''}`;
     board.appendChild(div);
   });
 }
 
 function renderDash() {
-  const me = state.players.find((p) => p.id === myPlayerId);
   el('dash').innerHTML = state.players.map((p, i) => {
     const isActive = i === state.turn.index;
-    const isBankrupt = p.bankrupt;
     const isMe = p.id === myPlayerId;
-    const jailTag = p.inJail ? ' [JAIL]' : '';
-    const pardonTag = p.pardonCards > 0 ? ` [PARDON x${p.pardonCards}]` : '';
-    const bankruptTag = isBankrupt ? ' [BANKRUPT]' : '';
-    const turnTag = isActive ? ' <span class="turn-arrow">&#8592; TURN</span>' : '';
-    return `<div class="player-row${isMe ? ' me' : ''}${isBankrupt ? ' bankrupt' : ''}">
-      ${p.name}: $${p.cash}${jailTag}${pardonTag}${bankruptTag}${turnTag}
+    const colorCls = colorFor(p.id);
+    const tags = [
+      p.inJail        ? '<span class="pc-tag jail">Jail</span>' : '',
+      p.pardonCards > 0 ? `<span class="pc-tag pardon">🃏 ×${p.pardonCards}</span>` : '',
+      p.bankrupt      ? '<span class="pc-tag bankrupt">Bankrupt</span>' : '',
+    ].join('');
+    const turnBadge = isActive ? '<span class="turn-indicator">Turn</span>' : '';
+    return `<div class="player-card${isMe ? ' me' : ''}${isActive ? ' active' : ''}${p.bankrupt ? ' bankrupt' : ''}">
+      ${turnBadge}
+      <div class="pc-name">
+        <span class="player-avatar ${colorCls}">${p.name[0]}</span>
+        ${p.name}${isMe ? ' <small style="color:var(--text3);font-weight:400">(you)</small>' : ''}
+      </div>
+      <div class="pc-cash">$${p.cash.toLocaleString()}</div>
+      ${tags ? `<div class="pc-tags">${tags}</div>` : ''}
     </div>`;
   }).join('');
 
@@ -104,34 +122,64 @@ function renderDash() {
     const name = actor?.name || '';
     let msg = '';
     switch (lastEvent.type) {
-      case 'ROLL':       msg = `${name} rolled ${lastEvent.d1}+${lastEvent.d2}=${lastEvent.d1+lastEvent.d2} → ${lastEvent.landed}`; break;
-      case 'BUY':        msg = `${name} bought space #${lastEvent.space}`; break;
-      case 'RENT':       msg = `${name} paid $${lastEvent.amount} rent`; break;
-      case 'GO_SALARY':  msg = `${name} collected $${lastEvent.amount} passing GO`; break;
-      case 'CARD':       msg = `${name} drew ${lastEvent.deck} card: "${lastEvent.desc}"`; break;
-      case 'BANKRUPT':   msg = `${name} went bankrupt!`; break;
-      case 'JAIL_ROLL':  msg = `${name} rolled ${lastEvent.d1}+${lastEvent.d2} in jail`; break;
-      case 'JAIL_ESCAPE':msg = `${name} escaped jail! → ${lastEvent.landed}`; break;
-      case 'PAY_JAIL':        msg = `${name} paid $${lastEvent.fine} to leave jail`; break;
-      case 'USE_PARDON':      msg = `${name} used a Pardon card to leave jail`; break;
-      case 'MORTGAGE':        msg = `${name} mortgaged ${map?.spaces[lastEvent.space]?.name} (+$${lastEvent.amount})`; break;
-      case 'UNMORTGAGE':      msg = `${name} unmortgaged ${map?.spaces[lastEvent.space]?.name} (-$${lastEvent.amount})`; break;
-      case 'BUILD_HOUSE':     msg = `${name} built a ${lastEvent.hotel ? 'hotel' : 'house'} on ${map?.spaces[lastEvent.space]?.name}`; break;
-      case 'SELL_HOUSE':      msg = `${name} sold a house on ${map?.spaces[lastEvent.space]?.name} (+$${lastEvent.refund})`; break;
-      case 'TRADE_OFFER':     msg = `${name} proposed a trade`; break;
-      case 'TRADE_ACCEPT':    msg = `${name} accepted a trade`; break;
-      case 'TRADE_REJECT':    msg = `${name} rejected a trade`; break;
-      case 'TRADE_CANCEL':    msg = `${name} cancelled a trade offer`; break;
-      case 'PARDON_RECEIVED': msg = `${name} received a Pardon (Get Out of Jail Free) card`; break;
-      case 'EACH_PLAYER':     msg = lastEvent.amount > 0 ? `${name} collected $${lastEvent.amount} from each player` : `${name} paid $${-lastEvent.amount} to each player`; break;
-      case 'RENOVATION':      msg = `${name} paid $${lastEvent.amount} for property renovations`; break;
-      case 'RANDOM_CITY':     msg = `${name} advanced to ${lastEvent.landed}`; break;
-      case 'TIMEOUT':         msg = `${name} timed out (penalty: $${lastEvent.count * 50})`; break;
-      case 'GAME_OVER':       msg = `Game over!`; break;
+      case 'ROLL':            msg = `🎲 ${name} rolled ${lastEvent.d1}+${lastEvent.d2}=${lastEvent.d1+lastEvent.d2} → landed on ${lastEvent.landed}`; break;
+      case 'BUY':             msg = `🏠 ${name} bought ${map?.spaces[lastEvent.space]?.name || `#${lastEvent.space}`}`; break;
+      case 'RENT':            msg = `💸 ${name} paid $${lastEvent.amount} rent`; break;
+      case 'GO_SALARY':       msg = `💰 ${name} collected $${lastEvent.amount} passing GO`; break;
+      case 'CARD':            msg = `🃏 ${name} drew a ${lastEvent.deck} card: "${lastEvent.desc}"`; break;
+      case 'BANKRUPT':        msg = `💀 ${name} went bankrupt!`; break;
+      case 'JAIL_ROLL':       msg = `🎲 ${name} rolled ${lastEvent.d1}+${lastEvent.d2} in jail`; break;
+      case 'JAIL_ESCAPE':     msg = `🔓 ${name} escaped jail! → ${lastEvent.landed}`; break;
+      case 'PAY_JAIL':        msg = `⛓ ${name} paid $${lastEvent.fine} to leave jail`; break;
+      case 'USE_PARDON':      msg = `🃏 ${name} used a Pardon card to leave jail`; break;
+      case 'MORTGAGE':        msg = `📌 ${name} mortgaged ${map?.spaces[lastEvent.space]?.name} (+$${lastEvent.amount})`; break;
+      case 'UNMORTGAGE':      msg = `✅ ${name} unmortgaged ${map?.spaces[lastEvent.space]?.name} (-$${lastEvent.amount})`; break;
+      case 'BUILD_HOUSE':     msg = `${lastEvent.hotel ? '🏨' : '🏠'} ${name} built a ${lastEvent.hotel ? 'hotel' : 'house'} on ${map?.spaces[lastEvent.space]?.name}`; break;
+      case 'SELL_HOUSE':      msg = `💰 ${name} sold a house on ${map?.spaces[lastEvent.space]?.name} (+$${lastEvent.refund})`; break;
+      case 'TRADE_OFFER':     msg = `🤝 ${name} proposed a trade`; break;
+      case 'TRADE_ACCEPT':    msg = `✅ ${name} accepted a trade`; break;
+      case 'TRADE_REJECT':    msg = `❌ ${name} rejected a trade`; break;
+      case 'TRADE_CANCEL':    msg = `↩ ${name} cancelled a trade offer`; break;
+      case 'PARDON_RECEIVED': msg = `🃏 ${name} received a Get Out of Jail Free card`; break;
+      case 'EACH_PLAYER':     msg = lastEvent.amount > 0 ? `💰 ${name} collected $${lastEvent.amount} from each player` : `💸 ${name} paid $${-lastEvent.amount} to each player`; break;
+      case 'RENOVATION':      msg = `🔨 ${name} paid $${lastEvent.amount} for property renovations`; break;
+      case 'RANDOM_CITY':     msg = `✈ ${name} advanced to ${lastEvent.landed}`; break;
+      case 'TIMEOUT':         msg = `⏱ ${name} timed out (penalty: $${lastEvent.count * 50})`; break;
+      case 'GAME_OVER':       msg = `🏆 Game over!`; break;
       default:                msg = lastEvent.type;
     }
     el('lastEvent').textContent = msg;
   }
+}
+
+// Dice pip layouts: which of the 9 grid cells (0–8, row-major) get a pip per face value
+const PIP_POSITIONS = {
+  1: [4],
+  2: [0, 8],
+  3: [0, 4, 8],
+  4: [0, 2, 6, 8],
+  5: [0, 2, 4, 6, 8],
+  6: [0, 2, 3, 5, 6, 8],
+};
+
+function dieSvg(value, rolling) {
+  const cells = Array(9).fill('');
+  (PIP_POSITIONS[value] || []).forEach((i) => { cells[i] = '<span class="pip"></span>'; });
+  return `<div class="die${rolling ? ' rolling' : ''}">${cells.join('')}</div>`;
+}
+
+let lastDice = null;
+function renderDice() {
+  const lastRoll = [...(state.log || [])].reverse().find((e) => e.type === 'ROLL' || e.type === 'JAIL_ROLL' || e.type === 'JAIL_ESCAPE');
+  const row = el('diceRow');
+  if (!lastRoll) { row.innerHTML = ''; return; }
+  const same = lastDice && lastDice.d1 === lastRoll.d1 && lastDice.d2 === lastRoll.d2 && lastDice.turn === state.turn.index;
+  const rolling = !same;
+  lastDice = { d1: lastRoll.d1, d2: lastRoll.d2, turn: state.turn.index };
+  const doubles = lastRoll.d1 === lastRoll.d2;
+  row.innerHTML = dieSvg(lastRoll.d1, rolling) + dieSvg(lastRoll.d2, rolling)
+    + `<span class="die-total">= ${lastRoll.d1 + lastRoll.d2}</span>`
+    + (doubles ? '<span class="die-doubles">Doubles!</span>' : '');
 }
 
 function renderActions() {
